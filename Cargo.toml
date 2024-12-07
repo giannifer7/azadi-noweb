@@ -1,0 +1,16 @@
+[package]
+name = "azadi-noweb"
+version = "0.1.0"
+edition = "2024"
+authors = ["Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"]
+description = "A Rust implementation of noweb-style literate programming tool"
+license = "MIT"
+
+[dependencies]
+regex = "1.9"
+lazy_static = "1.4"
+chrono = "0.4"
+clap = { version = "4.4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3.8"
