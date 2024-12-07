@@ -1,25 +1,49 @@
 name: CI Workflow
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'  # Trigger on version tags
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write  # Needed for creating releases
     strategy:
       matrix:
         include:
           - os: ubuntu-24.04
             artifact_extension: ''
+            asset_name: azadi-noweb-linux
           - os: windows-latest
             artifact_extension: '.exe'
+            asset_name: azadi-noweb-windows.exe
           - os: macos-latest
             artifact_extension: ''
+            asset_name: azadi-noweb-macos
     steps:
       - uses: actions/checkout@v4
       - run: rustup update
       - run: cargo build --release
-      - uses: actions/upload-artifact@v4
+
+      # Rename the binary to include platform info
+      - name: Prepare asset
+        shell: bash
+        run: |
+          cp "target/release/azadi-noweb${{ matrix.artifact_extension }}" "${{ matrix.asset_name }}"
+
+      # Create release
+      - name: Create Release
+        if: matrix.os == 'ubuntu-24.04'  # Only create release once
+        id: create_release
+        uses: softprops/action-gh-release@v1
         with:
-          name: azadi-noweb-${{ matrix.os }}
-          path: target/release/azadi-noweb${{ matrix.artifact_extension }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      # Upload asset
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ matrix.asset_name }}
