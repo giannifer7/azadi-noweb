@@ -1,16 +1,20 @@
 name: CI Workflow
-
 on:
   push:
     branches:
       - main
-
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-24.04
+            artifact_extension: ''
+          - os: windows-latest
+            artifact_extension: '.exe'
+          - os: macos-latest
+            artifact_extension: ''
     steps:
       - uses: actions/checkout@v4
       - run: rustup update
@@ -18,5 +22,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: azadi-noweb-${{ matrix.os }}
-          path: target/release/azadi-noweb
-          path: target/release/azadi-noweb.exe
+          path: target/release/azadi-noweb${{ matrix.artifact_extension }}
