@@ -19,3 +19,4 @@ jobs:
         with:
           name: azadi-noweb-${{ matrix.os }}
           path: target/release/azadi-noweb
+          path: target/release/azadi-noweb.exe
