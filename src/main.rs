@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use azadi_noweb::{ChunkError, Clip, SafeFileWriter};
+use azadi_noweb::{AzadiError, Clip, SafeFileWriter};
 
 #[derive(Parser)]
 #[command(
@@ -33,7 +33,7 @@ struct Args {
     files: Vec<PathBuf>,
 }
 
-fn run(args: Args) -> Result<(), ChunkError> {
+fn run(args: Args) -> Result<(), AzadiError> {
     // Create the SafeFileWriter
     let safe_writer = SafeFileWriter::new(args.gen, args.priv_dir);
     let mut clipper = Clip::new(safe_writer);

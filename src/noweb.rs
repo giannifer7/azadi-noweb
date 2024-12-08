@@ -5,7 +5,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-use crate::writer::SafeFileWriter;
+use crate::AzadiError;
+use crate::SafeFileWriter;
 
 lazy_static! {
     static ref OPEN_RE: Regex = Regex::new(r"<<([^>]+)>>=").unwrap();
@@ -15,10 +16,10 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum ChunkError {
-    RecursionLimit(String),     // Hit maximum recursion depth
-    RecursiveReference(String), // Found a recursive reference
-    UndefinedChunk(String),     // Referenced chunk doesn't exist
-    IoError(io::Error),         // Wrap std::io::Error
+    RecursionLimit(String),
+    RecursiveReference(String),
+    UndefinedChunk(String),
+    IoError(io::Error),
 }
 
 impl std::fmt::Display for ChunkError {
@@ -45,6 +46,15 @@ impl std::error::Error for ChunkError {}
 impl From<io::Error> for ChunkError {
     fn from(error: io::Error) -> Self {
         ChunkError::IoError(error)
+    }
+}
+
+impl From<AzadiError> for ChunkError {
+    fn from(err: AzadiError) -> Self {
+        ChunkError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            err.to_string(),
+        ))
     }
 }
 
@@ -75,10 +85,9 @@ impl ChunkStore {
 
         for line in text.lines() {
             if let Some(captures) = OPEN_RE.captures(line) {
-                chunk_name = Some(captures[1].to_string());
-                self.chunks
-                    .entry(chunk_name.clone().unwrap())
-                    .or_insert_with(Vec::new);
+                let name = captures[1].to_string();
+                chunk_name = Some(name.clone());
+                self.chunks.entry(name).or_default();
                 continue;
             }
 
@@ -89,7 +98,11 @@ impl ChunkStore {
 
             if let Some(ref name) = chunk_name {
                 if let Some(chunk_lines) = self.chunks.get_mut(name) {
-                    chunk_lines.push(format!("{}\n", line));
+                    if line.ends_with('\n') {
+                        chunk_lines.push(line.to_owned());
+                    } else {
+                        chunk_lines.push(format!("{}\n", line));
+                    }
                 }
             }
         }
@@ -98,7 +111,7 @@ impl ChunkStore {
             .chunks
             .keys()
             .filter(|name| name.starts_with("@file"))
-            .cloned()
+            .map(String::to_owned)
             .collect();
     }
 
@@ -111,13 +124,14 @@ impl ChunkStore {
     ) -> Result<Vec<String>, ChunkError> {
         const MAX_DEPTH: usize = 100;
         if depth > MAX_DEPTH {
-            return Err(ChunkError::RecursionLimit(chunk_name.to_string()));
+            return Err(ChunkError::RecursionLimit(chunk_name.to_owned()));
         }
 
-        if seen.contains(&chunk_name.to_string()) {
-            return Err(ChunkError::RecursiveReference(chunk_name.to_string()));
+        let chunk_owned = chunk_name.to_owned();
+        if seen.contains(&chunk_owned) {
+            return Err(ChunkError::RecursiveReference(chunk_owned));
         }
-        seen.push(chunk_name.to_string());
+        seen.push(chunk_owned);
 
         let mut result = Vec::new();
 
@@ -126,7 +140,12 @@ impl ChunkStore {
                 if let Some(captures) = SLOT_RE.captures(line) {
                     let additional_indent = captures.get(1).map_or("", |m| m.as_str());
                     let referenced_chunk = captures.get(2).map_or("", |m| m.as_str());
-                    let new_indent = format!("{}{}", indent, additional_indent);
+
+                    let new_indent = if indent.is_empty() {
+                        additional_indent.to_owned()
+                    } else {
+                        format!("{}{}", indent, additional_indent)
+                    };
 
                     result.extend(self.expand_with_depth(
                         referenced_chunk,
@@ -143,7 +162,7 @@ impl ChunkStore {
                 }
             }
         } else {
-            return Err(ChunkError::UndefinedChunk(chunk_name.to_string()));
+            return Err(ChunkError::UndefinedChunk(chunk_name.to_owned()));
         }
 
         seen.pop();
@@ -163,6 +182,11 @@ impl ChunkStore {
         self.chunks.get(chunk_name)
     }
 
+    pub fn reset(&mut self) {
+        self.chunks.clear();
+        self.file_chunks.clear();
+    }
+
     #[cfg(test)]
     pub fn has_chunk(&self, name: &str) -> bool {
         self.chunks.contains_key(name)
@@ -174,7 +198,7 @@ impl<'a> ChunkWriter<'a> {
         ChunkWriter { safe_file_writer }
     }
 
-    pub fn write_chunk(&mut self, chunk_name: &str, content: &[String]) -> Result<(), ChunkError> {
+    pub fn write_chunk(&mut self, chunk_name: &str, content: &[String]) -> Result<(), AzadiError> {
         if !chunk_name.starts_with("@file") {
             return Ok(());
         }
@@ -204,7 +228,7 @@ impl Clip {
         self.store.read(text)
     }
 
-    pub fn read_file<P: AsRef<Path>>(&mut self, input_path: P) -> Result<(), ChunkError> {
+    pub fn read_file<P: AsRef<Path>>(&mut self, input_path: P) -> Result<(), AzadiError> {
         let content = fs::read_to_string(input_path)?;
         self.read(&content);
         Ok(())
@@ -217,7 +241,7 @@ impl Clip {
         Ok(())
     }
 
-    pub fn write_files(&mut self) -> Result<(), ChunkError> {
+    pub fn write_files(&mut self) -> Result<(), AzadiError> {
         let mut writer = ChunkWriter::new(&mut self.writer);
 
         for file_chunk in self.store.get_file_chunks() {
@@ -232,7 +256,7 @@ impl Clip {
         &self,
         chunk_name: &str,
         out_stream: &mut W,
-    ) -> Result<(), ChunkError> {
+    ) -> Result<(), AzadiError> {
         let content = self.store.expand(chunk_name, "")?;
         for line in content {
             out_stream.write_all(line.as_bytes())?;
@@ -241,8 +265,12 @@ impl Clip {
         Ok(())
     }
 
-    pub fn expand(&self, chunk_name: &str, indent: &str) -> Result<Vec<String>, ChunkError> {
-        self.store.expand(chunk_name, indent)
+    pub fn expand(&self, chunk_name: &str, indent: &str) -> Result<Vec<String>, AzadiError> {
+        Ok(self.store.expand(chunk_name, indent)?)
+    }
+
+    pub fn reset(&mut self) {
+        self.store.reset();
     }
 
     #[cfg(test)]
