@@ -1,5 +1,4 @@
 use std::fs;
-use std::io;
 use tempfile::TempDir;
 
 use super::*;
@@ -74,7 +73,7 @@ Second chunk
 }
 
 #[test]
-fn test_nested_chunk_expansion() {
+fn test_nested_chunk_expansion() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new();
 
     setup.clip.read(
@@ -90,13 +89,14 @@ Nested content
 ",
     );
 
-    let expanded = setup.clip.expand("outer", "");
+    let expanded = setup.clip.expand("outer", "")?;
     let expected = vec!["Before\n", "Nested content\n", "After\n"];
     assert_eq!(expanded, expected);
+    Ok(())
 }
 
 #[test]
-fn test_indentation_preservation() {
+fn test_indentation_preservation() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new();
 
     setup.clip.read(
@@ -110,8 +110,9 @@ some code
 ",
     );
 
-    let expanded = setup.clip.expand("main", "");
+    let expanded = setup.clip.expand("main", "")?;
     assert_eq!(expanded, vec!["    some code\n"]);
+    Ok(())
 }
 
 #[test]
@@ -135,7 +136,7 @@ other content
 }
 
 #[test]
-fn test_chunk_output_to_writer() -> io::Result<()> {
+fn test_chunk_output_to_writer() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new();
     let mut output = Vec::new();
 
@@ -155,7 +156,7 @@ Line 2
 }
 
 #[test]
-fn test_multiple_chunk_references() {
+fn test_multiple_chunk_references() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new();
 
     setup.clip.read(
@@ -173,13 +174,14 @@ Second part
 ",
     );
 
-    let expanded = setup.clip.expand("main", "");
+    let expanded = setup.clip.expand("main", "")?;
     let expected = vec!["First part\n", "Second part\n"];
     assert_eq!(expanded, expected);
+    Ok(())
 }
 
 #[test]
-fn test_file_writing() -> io::Result<()> {
+fn test_file_writing() -> Result<(), ChunkError> {
     let temp = TempDir::new()?;
     let safe_writer = SafeFileWriter::new(temp.path().join("gen"), temp.path().join("private"));
     let mut clip = Clip::new(safe_writer);
@@ -200,7 +202,7 @@ Hello, World!
 }
 
 #[test]
-fn test_multiple_file_generation() -> io::Result<()> {
+fn test_multiple_file_generation() -> Result<(), ChunkError> {
     let temp = TempDir::new()?;
     let safe_writer = SafeFileWriter::new(temp.path().join("gen"), temp.path().join("private"));
     let mut clip = Clip::new(safe_writer);
@@ -242,7 +244,7 @@ fn test_empty_chunk() {
 }
 
 #[test]
-fn test_complex_indentation() {
+fn test_complex_indentation() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new();
 
     setup.clip.read(
@@ -257,7 +259,7 @@ print('hello')
 ",
     );
 
-    let expanded = setup.clip.expand("code", "");
+    let expanded = setup.clip.expand("code", "")?;
     let expected = vec!["def example():\n", "    print('hello')\n"];
     assert_eq!(
         expanded, expected,
@@ -265,7 +267,7 @@ print('hello')
     );
 
     // Also test with additional base indentation
-    let expanded_indented = setup.clip.expand("code", "  ");
+    let expanded_indented = setup.clip.expand("code", "  ")?;
     let expected_indented = vec![
         "  def example():\n",
         "      print('hello')\n", // Should have both the base indent and the nested indent
@@ -274,4 +276,44 @@ print('hello')
         expanded_indented, expected_indented,
         "Both base and nested indentation should be preserved"
     );
+    Ok(())
+}
+
+#[test]
+fn test_recursive_chunk() {
+    let mut setup = TestSetup::new();
+
+    setup.clip.read(
+        "\
+<<recursive>>=
+Start
+<<recursive>>
+End
+@
+",
+    );
+
+    let result = setup.clip.expand("recursive", "");
+    assert!(matches!(result, Err(ChunkError::RecursiveReference(_))));
+}
+
+#[test]
+fn test_mutual_recursion() {
+    let mut setup = TestSetup::new();
+
+    setup.clip.read(
+        "\
+<<a>>=
+A calls B:
+<<b>>
+@
+<<b>>=
+B calls A:
+<<a>>
+@
+",
+    );
+
+    let result = setup.clip.expand("a", "");
+    assert!(matches!(result, Err(ChunkError::RecursiveReference(_))));
 }
