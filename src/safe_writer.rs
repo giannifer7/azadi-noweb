@@ -11,6 +11,7 @@ pub enum SafeWriterError {
     DirectoryCreationFailed(PathBuf),
     BackupFailed(PathBuf),
     ModifiedExternally(PathBuf),
+    SecurityViolation(String),
 }
 
 impl std::fmt::Display for SafeWriterError {
@@ -26,6 +27,7 @@ impl std::fmt::Display for SafeWriterError {
             SafeWriterError::ModifiedExternally(path) => {
                 write!(f, "File was modified externally: {}", path.display())
             }
+            SafeWriterError::SecurityViolation(msg) => write!(f, "Security violation: {}", msg),
         }
     }
 }
@@ -97,15 +99,12 @@ impl SafeFileWriter {
         gen_base: P,
         private_dir: P,
     ) -> io::Result<(PathBuf, PathBuf)> {
-        let gen = gen_base.as_ref().canonicalize().or_else(|_| {
-            fs::create_dir_all(gen_base.as_ref())?;
-            gen_base.as_ref().canonicalize()
-        })?;
+        // Ensure directories exist before canonicalizing.
+        fs::create_dir_all(gen_base.as_ref())?;
+        fs::create_dir_all(private_dir.as_ref())?;
 
-        let private = private_dir.as_ref().canonicalize().or_else(|_| {
-            fs::create_dir_all(private_dir.as_ref())?;
-            private_dir.as_ref().canonicalize()
-        })?;
+        let gen = gen_base.as_ref().canonicalize()?;
+        let private = private_dir.as_ref().canonicalize()?;
 
         Ok((gen, private))
     }
@@ -173,6 +172,7 @@ impl SafeFileWriter {
         &mut self,
         file_name: P,
     ) -> Result<PathBuf, SafeWriterError> {
+        validate_filename(file_name.as_ref())?;
         let path = self.prepare_write_file(&file_name)?;
 
         if self.config.backup_enabled {
@@ -190,6 +190,7 @@ impl SafeFileWriter {
     }
 
     pub fn after_write<P: AsRef<Path>>(&self, file_name: P) -> Result<(), SafeWriterError> {
+        validate_filename(file_name.as_ref())?;
         let path = self.prepare_write_file(file_name)?;
 
         let private_file = self.private_dir.join(&path);
@@ -240,4 +241,38 @@ impl SafeFileWriter {
     pub fn get_private_dir(&self) -> &Path {
         &self.private_dir
     }
+}
+
+/// Validate that the filename does not specify an absolute path or attempt directory traversal.
+fn validate_filename(path: &Path) -> Result<(), SafeWriterError> {
+    let filename = path.to_string_lossy();
+
+    // Check for Unix-style absolute path
+    if filename.starts_with('/') {
+        return Err(SafeWriterError::SecurityViolation(format!(
+            "Absolute paths are not allowed: {}",
+            filename
+        )));
+    }
+
+    // Check for Windows-style absolute paths, e.g., "C:" or "D:"
+    if filename.len() >= 2 {
+        let chars: Vec<char> = filename.chars().collect();
+        if chars[1] == ':' && chars[0].is_ascii_alphabetic() {
+            return Err(SafeWriterError::SecurityViolation(format!(
+                "Windows-style absolute paths are not allowed: {}",
+                filename
+            )));
+        }
+    }
+
+    // Check if filename contains '..'
+    if filename.split('/').any(|component| component == "..") {
+        return Err(SafeWriterError::SecurityViolation(format!(
+            "Path traversal detected (..): {}",
+            filename
+        )));
+    }
+
+    Ok(())
 }

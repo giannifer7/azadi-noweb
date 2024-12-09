@@ -90,7 +90,9 @@ impl TestSetup {
         let gen_path = temp_dir.path().join("gen");
         let private_path = temp_dir.path().join("private");
         let safe_writer = SafeFileWriter::new(gen_path, private_path);
-        let clip = Clip::new(safe_writer);
+
+        // Provide the default delimiters to Clip::new
+        let clip = Clip::new(safe_writer, "<<", ">>", "@");
 
         TestSetup {
             _temp_dir: temp_dir,
@@ -193,7 +195,9 @@ fn test_file_writing() -> Result<(), ChunkError> {
     let gen_path = temp.path().join("gen");
     let private_path = temp.path().join("private");
     let safe_writer = SafeFileWriter::new(gen_path.clone(), private_path);
-    let mut clip = Clip::new(safe_writer);
+
+    // Provide the default delimiters here as well
+    let mut clip = Clip::new(safe_writer, "<<", ">>", "@");
 
     const FILE_CONTENT: &str = "
 <<@file test.txt>>=
@@ -214,7 +218,9 @@ fn test_multiple_file_generation() -> Result<(), ChunkError> {
     let gen_path = temp.path().join("gen");
     let private_path = temp.path().join("private");
     let safe_writer = SafeFileWriter::new(gen_path.clone(), private_path);
-    let mut clip = Clip::new(safe_writer);
+
+    // Provide the default delimiters here as well
+    let mut clip = Clip::new(safe_writer, "<<", ">>", "@");
 
     const TWO_FILES: &str = "
 <<@file file1.txt>>=

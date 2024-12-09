@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
@@ -7,12 +6,6 @@ use std::path::Path;
 
 use crate::AzadiError;
 use crate::SafeFileWriter;
-
-lazy_static! {
-    static ref OPEN_RE: Regex = Regex::new(r"<<([^>]+)>>=").unwrap();
-    static ref SLOT_RE: Regex = Regex::new(r"(\s*)<<([^>]+)>>\s*$").unwrap();
-    static ref CLOSE_RE: Regex = Regex::new(r"@").unwrap();
-}
 
 #[derive(Debug)]
 pub enum ChunkError {
@@ -61,6 +54,9 @@ impl From<AzadiError> for ChunkError {
 pub struct ChunkStore {
     chunks: HashMap<String, Vec<String>>,
     file_chunks: Vec<String>,
+    open_re: Regex,
+    slot_re: Regex,
+    close_string: String,
 }
 
 pub struct ChunkWriter<'a> {
@@ -73,10 +69,30 @@ pub struct Clip {
 }
 
 impl ChunkStore {
-    pub fn new() -> Self {
+    /// Create a new ChunkStore with custom delimiters.
+    /// The user provides open_delim (e.g. "<<") and close_delim (e.g. ">>").
+    /// For chunk definitions, we will match `<<...>>=` by appending '=' to the close_delim.
+    /// For slot references, we match `<<...>>` without '='.
+    pub fn new(open_delim: &str, close_delim: &str, chunk_end: &str) -> Self {
+        let open_escaped = regex::escape(open_delim);
+        let close_escaped = regex::escape(close_delim);
+
+        // Chunk definitions end with '=' so we append it here.
+        // Pattern: <<chunk_name>>=
+        let open_pattern = format!(r"{}(.+){}=", open_escaped, close_escaped);
+        let open_re = Regex::new(&open_pattern).expect("Invalid open/close delim for definition");
+
+        // Slot references do not have '='.
+        // Pattern: (\s*)<<chunk_name>>\s*$
+        let slot_pattern = format!(r"(\s*){}(.+){}\s*$", open_escaped, close_escaped);
+        let slot_re = Regex::new(&slot_pattern).expect("Invalid slot pattern");
+
         ChunkStore {
             chunks: HashMap::new(),
             file_chunks: Vec::new(),
+            open_re,
+            slot_re,
+            close_string: chunk_end.to_string(),
         }
     }
 
@@ -84,20 +100,22 @@ impl ChunkStore {
         let mut chunk_name: Option<String> = None;
 
         for line in text.lines() {
-            if let Some(captures) = OPEN_RE.captures(line) {
+            if let Some(captures) = self.open_re.captures(line) {
                 let name = captures[1].to_string();
                 chunk_name = Some(name.clone());
                 self.chunks.entry(name).or_default();
                 continue;
             }
 
-            if CLOSE_RE.is_match(line) {
+            // Check if this line matches the close line
+            if line.trim() == self.close_string {
                 chunk_name = None;
                 continue;
             }
 
             if let Some(ref name) = chunk_name {
                 if let Some(chunk_lines) = self.chunks.get_mut(name) {
+                    // Ensure each line ends with a newline.
                     if line.ends_with('\n') {
                         chunk_lines.push(line.to_owned());
                     } else {
@@ -137,7 +155,7 @@ impl ChunkStore {
 
         if let Some(chunk_lines) = self.chunks.get(chunk_name) {
             for line in chunk_lines {
-                if let Some(captures) = SLOT_RE.captures(line) {
+                if let Some(captures) = self.slot_re.captures(line) {
                     let additional_indent = captures.get(1).map_or("", |m| m.as_str());
                     let referenced_chunk = captures.get(2).map_or("", |m| m.as_str());
 
@@ -148,17 +166,21 @@ impl ChunkStore {
                     };
 
                     result.extend(self.expand_with_depth(
-                        referenced_chunk,
+                        referenced_chunk.trim(),
                         &new_indent,
                         depth + 1,
                         seen,
                     )?);
                 } else {
-                    if indent.is_empty() {
-                        result.push(line.clone());
-                    } else {
-                        result.push(format!("{}{}", indent, line));
+                    // Only prepend indent if it's not empty.
+                    let mut new_line = line.clone();
+                    if !indent.is_empty() {
+                        let mut with_indent = String::with_capacity(indent.len() + new_line.len());
+                        with_indent.push_str(indent);
+                        with_indent.push_str(&new_line);
+                        new_line = with_indent;
                     }
+                    result.push(new_line);
                 }
             }
         } else {
@@ -217,9 +239,17 @@ impl<'a> ChunkWriter<'a> {
 }
 
 impl Clip {
-    pub fn new(safe_file_writer: SafeFileWriter) -> Self {
+    /// Create a new Clip with custom delimiters.
+    /// The user sets open_delim and close_delim symmetrically (e.g. "<<", ">>").
+    /// For chunk definitions, `=` is appended automatically to the close_delim.
+    pub fn new(
+        safe_file_writer: SafeFileWriter,
+        open_delim: &str,
+        close_delim: &str,
+        chunk_end: &str,
+    ) -> Self {
         Clip {
-            store: ChunkStore::new(),
+            store: ChunkStore::new(open_delim, close_delim, chunk_end),
             writer: safe_file_writer,
         }
     }

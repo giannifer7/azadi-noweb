@@ -11,6 +11,14 @@ regex = "1.9"
 lazy_static = "1.4"
 chrono = "0.4"
 clap = { version = "4.4", features = ["derive"] }
+dialoguer = "0.11.0"
+predicates = "1.0.8"
 
 [dev-dependencies]
 tempfile = "3.8"
+predicates = "1.0.8"
+assert_cmd = "2.0.7"
+
+[[bin]]
+name = "azadi-noweb"
+path = "src/main.rs"

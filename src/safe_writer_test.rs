@@ -47,6 +47,12 @@ fn test_basic_file_writing() -> Result<(), AzadiError> {
 #[test]
 fn test_unmodified_file_update() -> Result<(), AzadiError> {
     let (_temp, mut writer) = create_test_writer();
+
+    // Disable modification checks for this particular test
+    let mut config = writer.get_config().clone();
+    config.modification_check = false;
+    writer.set_config(config);
+
     let test_file = PathBuf::from("test.txt");
 
     write_file(&mut writer, &test_file, "Initial content")?;
@@ -204,15 +210,22 @@ fn test_copy_if_different_with_same_content() -> Result<(), AzadiError> {
     Ok(())
 }
 
-// New error condition tests
+// Updated test to reflect new behavior on invalid (absolute) path
 #[test]
 fn test_invalid_path() -> Result<(), AzadiError> {
     let (_temp, mut writer) = create_test_writer();
+    // Previously tested directory creation error on absolute path, but now it triggers SecurityViolation.
     let invalid_path = PathBuf::from("/nonexistent/path/test.txt");
 
     match write_file(&mut writer, &invalid_path, "content") {
-        Err(AzadiError::SafeWriter(SafeWriterError::DirectoryCreationFailed(_))) => Ok(()),
-        Ok(_) => panic!("Expected DirectoryCreationFailed error"),
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Absolute paths are not allowed"),
+                "Expected SecurityViolation for absolute path"
+            );
+            Ok(())
+        }
+        Ok(_) => panic!("Expected SecurityViolation error"),
         Err(e) => panic!("Unexpected error: {}", e),
     }
 }
@@ -269,4 +282,103 @@ fn test_backup_disabled() -> Result<(), AzadiError> {
     );
 
     Ok(())
+}
+
+// ===== New tests for validate_filename =====
+
+#[test]
+fn test_validate_filename_relative_path() -> Result<(), AzadiError> {
+    let (_temp, mut writer) = create_test_writer();
+    // A simple relative path should be allowed
+    let test_file = PathBuf::from("simple.txt");
+    write_file(&mut writer, &test_file, "Allowed")?;
+    let final_path = writer.get_gen_base().join(&test_file);
+    let content = fs::read_to_string(&final_path)?;
+    assert_eq!(content, "Allowed");
+    Ok(())
+}
+
+#[test]
+fn test_validate_filename_absolute_unix() {
+    let (_temp, mut writer) = create_test_writer();
+    let test_file = PathBuf::from("/absolute/unix/path.txt");
+
+    let result = write_file(&mut writer, &test_file, "Should fail");
+    match result {
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Absolute paths are not allowed"),
+                "Expected absolute path error message"
+            );
+        }
+        _ => panic!("Expected SecurityViolation for absolute Unix path"),
+    }
+}
+
+#[test]
+fn test_validate_filename_absolute_windows() {
+    let (_temp, mut writer) = create_test_writer();
+    let test_file = PathBuf::from("C:/windows/path.txt");
+
+    let result = write_file(&mut writer, &test_file, "Should fail");
+    match result {
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Windows-style absolute paths are not allowed"),
+                "Expected windows-style absolute path error message"
+            );
+        }
+        _ => panic!("Expected SecurityViolation for Windows absolute path"),
+    }
+}
+
+#[test]
+fn test_validate_filename_drive_letter_without_slash() {
+    let (_temp, mut writer) = create_test_writer();
+    let test_file = PathBuf::from("C:test.txt");
+
+    let result = write_file(&mut writer, &test_file, "Should fail");
+    match result {
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Windows-style absolute paths are not allowed"),
+                "Expected windows-style absolute path error message"
+            );
+        }
+        _ => panic!("Expected SecurityViolation for Windows-style drive path"),
+    }
+}
+
+#[test]
+fn test_validate_filename_parent_traversal() {
+    let (_temp, mut writer) = create_test_writer();
+    let test_file = PathBuf::from("../outside.txt");
+
+    let result = write_file(&mut writer, &test_file, "Should fail");
+    match result {
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Path traversal detected (..)"),
+                "Expected path traversal error message"
+            );
+        }
+        _ => panic!("Expected SecurityViolation for path traversal"),
+    }
+}
+
+#[test]
+fn test_validate_filename_nested_parent_traversal() {
+    let (_temp, mut writer) = create_test_writer();
+    let test_file = PathBuf::from("dir1/../dir2/test.txt");
+
+    let result = write_file(&mut writer, &test_file, "Should fail");
+    match result {
+        Err(AzadiError::SafeWriter(SafeWriterError::SecurityViolation(msg))) => {
+            assert!(
+                msg.contains("Path traversal detected (..)"),
+                "Expected path traversal error message"
+            );
+        }
+        _ => panic!("Expected SecurityViolation for nested path traversal"),
+    }
 }
