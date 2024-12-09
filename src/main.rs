@@ -12,7 +12,7 @@ use azadi_noweb::{AzadiError, Clip, SafeFileWriter};
     version
 )]
 struct Args {
-    /// Output file for --chunks (defaults to stdout)
+    /// Output file for --chunks [default: stdout]
     #[arg(long)]
     output: Option<PathBuf>,
 
@@ -28,15 +28,15 @@ struct Args {
     #[arg(long, default_value = "gen")]
     gen: PathBuf,
 
-    /// Delimiter used to open a chunk (default: "<<")
+    /// Delimiter used to open a chunk
     #[arg(long, default_value = "<<")]
     open_delim: String,
 
-    /// Delimiter used to close a chunk definition (default: ">>")
+    /// Delimiter used to close a chunk definition
     #[arg(long, default_value = ">>")]
     close_delim: String,
 
-    /// Delimiter for chunk-end lines (default: "@")
+    /// Delimiter for chunk-end lines
     #[arg(long, default_value = "@")]
     chunk_end: String,
 
