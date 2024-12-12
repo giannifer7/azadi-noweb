@@ -165,12 +165,13 @@ impl ChunkStore {
                         format!("{}{}", indent, additional_indent)
                     };
 
-                    result.extend(self.expand_with_depth(
+                    let expanded = self.expand_with_depth(
                         referenced_chunk.trim(),
                         &new_indent,
                         depth + 1,
                         seen,
-                    )?);
+                    )?;
+                    result.extend(expanded);
                 } else {
                     // Only prepend indent if it's not empty.
                     let mut new_line = line.clone();
@@ -200,8 +201,8 @@ impl ChunkStore {
         &self.file_chunks
     }
 
-    pub fn get_chunk_content(&self, chunk_name: &str) -> Option<&Vec<String>> {
-        self.chunks.get(chunk_name)
+    pub fn get_chunk_content(&self, chunk_name: &str) -> Result<Vec<String>, ChunkError> {
+        self.expand(chunk_name, "")
     }
 
     pub fn reset(&mut self) {
@@ -272,13 +273,21 @@ impl Clip {
     }
 
     pub fn write_files(&mut self) -> Result<(), AzadiError> {
-        let mut writer = ChunkWriter::new(&mut self.writer);
-
+        // Iterate over all file chunks
         for file_chunk in self.store.get_file_chunks() {
-            if let Some(content) = self.store.get_chunk_content(file_chunk) {
-                writer.write_chunk(file_chunk, content)?;
+            // Ensure it's a file chunk by checking the prefix
+            if file_chunk.starts_with("@file ") {
+                // Expand the chunk content, resolving any nested references
+                let expanded_content = self.expand(file_chunk, "")?;
+                // Create a writer within a separate scope to limit mutable borrow
+                {
+                    let mut writer = ChunkWriter::new(&mut self.writer);
+                    // Write the expanded content to the file
+                    writer.write_chunk(file_chunk, &expanded_content)?;
+                }
             }
         }
+
         Ok(())
     }
 
@@ -309,7 +318,7 @@ impl Clip {
     }
 
     #[cfg(test)]
-    pub fn get_chunk_content(&self, name: &str) -> Option<&Vec<String>> {
+    pub fn get_chunk_content(&self, name: &str) -> Result<Vec<String>, ChunkError> {
         self.store.get_chunk_content(name)
     }
 
