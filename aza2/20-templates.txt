@@ -1,0 +1,179 @@
+I'll provide all the package format templates:
+
+<[@file packaging/templates/nix.jinja2]>=
+{
+  description = "{{ description }}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in
+      {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "{{ package_name }}";
+          version = "{{ version }}";
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          meta = with pkgs.lib; {
+            description = "{{ description }}";
+            homepage = "{{ repo_url }}";
+            license = licenses.{{ license|lower }};
+            maintainers = [ maintainers.{{ maintainer_name|lower }} ];
+          };
+        };
+      }
+    );
+}
+$$
+
+<[@file packaging/templates/arch.jinja2]>=
+# Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+pkgname={{ package_name }}
+pkgver={{ version }}
+pkgrel=1
+pkgdesc="{{ description }}"
+arch=({% for arch in architectures %}'{{ arch }}'{% if not loop.last %} {% endif %}{% endfor %})
+url="{{ repo_url }}"
+license=('{{ license }}')
+depends=({% for dep in dependencies %}'{{ dep }}'{% if not loop.last %} {% endif %}{% endfor %})
+makedepends=('rust' 'cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha512sums=('{{ sha512sum }}')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --release
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+$$
+
+<[@file packaging/templates/void.jinja2]>=
+# Template file for '{{ package_name }}'
+pkgname={{ package_name }}
+version={{ version }}
+revision=1
+build_style=cargo
+{% if libc_variant == "musl" %}
+archs="~*-musl"
+{% endif %}
+short_desc="{{ description }}"
+maintainer="{{ maintainer_name }} <{{ maintainer_email }}>"
+license="{{ license }}"
+homepage="{{ repo_url }}"
+distfiles="${homepage}/archive/v${version}.tar.gz"
+checksum="{{ sha512sum }}"
+{% if dependencies %}
+makedepends="{{ dependencies|join(' ') }}"
+{% endif %}
+
+do_install() {
+    vbin target/release/$pkgname
+    vlicense LICENSE
+    vdoc README.md
+}
+$$
+
+<[@file packaging/templates/alpine.jinja2]>=
+# Contributor: {{ maintainer_name }} <{{ maintainer_email }}>
+# Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+pkgname={{ package_name }}
+pkgver={{ version }}
+pkgrel=0
+pkgdesc="{{ description }}"
+url="{{ repo_url }}"
+arch="{% for arch in architectures %}{{ arch }}{% if not loop.last %} {% endif %}{% endfor %}"
+license="{{ license }}"
+makedepends="cargo"
+source="$pkgname-$pkgver.tar.gz::${url}/archive/v${pkgver}.tar.gz"
+sha512sums="{{ sha512sum }}"
+
+build() {
+    cargo build --release
+}
+
+package() {
+    install -Dm755 target/release/$pkgname "$pkgdir"/usr/bin/$pkgname
+    install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+    install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+}
+$$
+
+<[@file packaging/templates/deb.jinja2]>=
+Package: {{ package_name }}
+Version: {{ version }}
+Section: utils
+Priority: optional
+Architecture: {% for arch in architectures %}{{ arch }}{% if not loop.last %}, {% endif %}{% endfor %}
+Depends: ${shlibs:Depends}, ${misc:Depends}{% if dependencies %}, {{ dependencies|join(', ') }}{% endif %}
+Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+Description: {{ description }}
+ A Rust implementation of noweb-style literate programming tool.
+ .
+ Allows developers to write code and documentation in a single source file,
+ with the ability to extract either the code or documentation as needed.
+$$
+
+<[@file packaging/templates/rpm.jinja2]>=
+Name: {{ package_name }}
+Version: {{ version }}
+Release: 1%{?dist}
+Summary: {{ description }}
+
+License: {{ license }}
+URL: {{ repo_url }}
+Source0: %{url}/archive/v%{version}.tar.gz
+
+BuildRequires: cargo
+{% if dependencies %}
+Requires: {{ dependencies|join(', ') }}
+{% endif %}
+
+%description
+{{ description }}
+
+%prep
+%autosetup
+
+%build
+cargo build --release
+
+%install
+install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
+install -Dm644 LICENSE %{buildroot}%{_datadir}/licenses/%{name}/LICENSE
+install -Dm644 README.md %{buildroot}%{_datadir}/doc/%{name}/README.md
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/%{name}
+$$
+
+Would you like me to:
+1. Add more templating features to any format?
+2. Add support for additional configuration options?
+3. Add template documentation?

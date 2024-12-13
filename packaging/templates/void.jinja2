@@ -3,12 +3,18 @@ pkgname={{ package_name }}
 version={{ version }}
 revision=1
 build_style=cargo
+{% if libc_variant == "musl" %}
+archs="~*-musl"
+{% endif %}
 short_desc="{{ description }}"
 maintainer="{{ maintainer_name }} <{{ maintainer_email }}>"
 license="{{ license }}"
 homepage="{{ repo_url }}"
 distfiles="${homepage}/archive/v${version}.tar.gz"
-sha512sum="{{ sha512sum }}"
+checksum="{{ sha512sum }}"
+{% if dependencies %}
+makedepends="{{ dependencies|join(' ') }}"
+{% endif %}
 
 do_install() {
     vbin target/release/$pkgname

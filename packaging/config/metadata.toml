@@ -1,0 +1,21 @@
+# Build configuration
+[build]
+output_dir = "build"
+
+[distributions]
+# Supported architectures per distribution
+arch = ["x86_64", "aarch64"]
+
+# Distribution-specific dependencies
+[distributions.dependencies]
+alpine = ["musl"]
+arch = ["gcc-libs"]
+void-glibc = []
+void-musl = ["musl"]
+deb = []
+rpm = ["glibc >= 2.28"]
+
+# Libc variants
+[distributions.libc]
+void-glibc = "glibc"
+void-musl = "musl"

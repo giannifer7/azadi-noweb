@@ -1,0 +1,249 @@
+I'll break this into separate workflows per distribution and add testing and dependency handling. First, let's create a common job for generation:
+
+<[@file .github/workflows/packages-generate.yml]>=
+name: Generate Package Files
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: "Package version"
+        value: ${{ jobs.generate.outputs.version }}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install uv
+        run: |
+          pip install uv
+          uv pip install -e ".[dev]"
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate package files
+        run: python -m generate_packages
+
+      - name: Upload package files
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build/
+$$
+
+Now for Alpine:
+
+<[@file .github/workflows/packages-alpine.yml]>=
+name: Build Alpine Package
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache alpine-sdk rust cargo
+
+      - name: Build package
+        run: |
+          adduser -D builder
+          addgroup builder abuild
+          echo "%abuild ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/abuild
+          cd packaging/build/alpine
+          abuild -r
+
+      - name: Test package
+        run: |
+          apk add --allow-untrusted ./packages/*/*.apk
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-package
+          path: packages/*/*.apk
+$$
+
+For Arch Linux:
+
+<[@file .github/workflows/packages-arch.yml]>=
+name: Build Arch Package
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm rust cargo git
+
+      - name: Build package
+        run: |
+          cd packaging/build/arch
+          makepkg -si --noconfirm
+
+      - name: Test package
+        run: |
+          pacman -U --noconfirm *.pkg.tar.zst
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: packaging/build/arch/*.pkg.tar.zst
+$$
+
+For Void Linux:
+
+<[@file .github/workflows/packages-void.yml]>=
+name: Build Void Packages
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        libc: [glibc, musl]
+    runs-on: ubuntu-latest
+    container:
+      image: voidlinux/voidlinux-${{ matrix.libc }}:latest
+      options: --privileged
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Install build dependencies
+        run: |
+          xbps-install -Syu
+          xbps-install -y rust cargo git xtools
+
+      - name: Build package
+        run: |
+          cd packaging/build/void/${{ matrix.libc }}
+          ./xbps-src pkg azadi-noweb
+
+      - name: Test package
+        run: |
+          xbps-install --repository=hostdir/binpkgs azadi-noweb
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-${{ matrix.libc }}-package
+          path: hostdir/binpkgs/*/*.xbps
+$$
+
+And finally, a main workflow to coordinate them all and create a release:
+
+<[@file .github/workflows/packages-release.yml]>=
+name: Build and Release Packages
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  generate:
+    uses: ./.github/workflows/packages-generate.yml
+
+  alpine:
+    needs: generate
+    uses: ./.github/workflows/packages-alpine.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  arch:
+    needs: generate
+    uses: ./.github/workflows/packages-arch.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  void:
+    needs: generate
+    uses: ./.github/workflows/packages-void.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  release:
+    needs: [generate, alpine, arch, void]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/alpine-package/*
+            artifacts/arch-package/*
+            artifacts/void-*-package/*
+          generate_release_notes: true
+$$
+
+Key features:
+1. Separate workflows for each distribution
+2. Build dependencies handled per distro
+3. Package testing after building
+4. Artifact collection and release creation
+5. Version passing between workflows
+6. Privileged containers where needed (e.g., Void Linux)
+
+Would you like me to:
+1. Add more test cases?
+2. Add repository publishing configuration?
+3. Add caching for build dependencies?
+4. Add error handling and retries?

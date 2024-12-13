@@ -1,3 +1,6 @@
+Ah yes, the author format is different for PEP 621 (pyproject.toml standard). Here's the correct format:
+
+<[@file packaging/scripts/pyproject.toml]>=
 [project]
 name = "package-generator"
 version = "0.1.0"
@@ -76,3 +79,10 @@ disable = [
     "W0718",  # broad-exception-caught
     "W1514",  # unspecified-encoding
 ]
+$$
+
+The key change is the author format from a string to an inline table with `name` and `email` fields. This follows PEP 621's specification for author metadata.
+
+Would you like me to:
+1. Add more development tooling configurations?
+2. Update any other parts of the configuration?

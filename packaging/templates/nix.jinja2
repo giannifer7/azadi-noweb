@@ -1,0 +1,42 @@
+{
+  description = "{{ description }}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in
+      {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "{{ package_name }}";
+          version = "{{ version }}";
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          meta = with pkgs.lib; {
+            description = "{{ description }}";
+            homepage = "{{ repo_url }}";
+            license = licenses.{{ license|lower }};
+            maintainers = [ maintainers.{{ maintainer_name|lower }} ];
+          };
+        };
+      }
+    );
+}

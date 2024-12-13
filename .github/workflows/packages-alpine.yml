@@ -1,0 +1,41 @@
+name: Build Alpine Package
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache alpine-sdk rust cargo
+
+      - name: Build package
+        run: |
+          adduser -D builder
+          addgroup builder abuild
+          echo "%abuild ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/abuild
+          cd packaging/build/alpine
+          abuild -r
+
+      - name: Test package
+        run: |
+          apk add --allow-untrusted ./packages/*/*.apk
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpine-package
+          path: packages/*/*.apk

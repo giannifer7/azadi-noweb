@@ -1,0 +1,44 @@
+name: Build Void Packages
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        libc: [glibc, musl]
+    runs-on: ubuntu-latest
+    container:
+      image: voidlinux/voidlinux-${{ matrix.libc }}:latest
+      options: --privileged
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Install build dependencies
+        run: |
+          xbps-install -Syu
+          xbps-install -y rust cargo git xtools
+
+      - name: Build package
+        run: |
+          cd packaging/build/void/${{ matrix.libc }}
+          ./xbps-src pkg azadi-noweb
+
+      - name: Test package
+        run: |
+          xbps-install --repository=hostdir/binpkgs azadi-noweb
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-${{ matrix.libc }}-package
+          path: hostdir/binpkgs/*/*.xbps

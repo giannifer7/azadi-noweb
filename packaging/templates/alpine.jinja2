@@ -5,19 +5,17 @@ pkgver={{ version }}
 pkgrel=0
 pkgdesc="{{ description }}"
 url="{{ repo_url }}"
-arch="x86_64 aarch64"
+arch="{% for arch in architectures %}{{ arch }}{% if not loop.last %} {% endif %}{% endfor %}"
 license="{{ license }}"
 makedepends="cargo"
-source="$pkgname-$pkgver.tar.gz::{{ repo_url }}/archive/v$pkgver.tar.gz"
+source="$pkgname-$pkgver.tar.gz::${url}/archive/v${pkgver}.tar.gz"
 sha512sums="{{ sha512sum }}"
 
 build() {
-    cd "$srcdir/$pkgname-$pkgver"
     cargo build --release
 }
 
 package() {
-    cd "$srcdir/$pkgname-$pkgver"
     install -Dm755 target/release/$pkgname "$pkgdir"/usr/bin/$pkgname
     install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
     install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md

@@ -1,166 +1,235 @@
 #!/usr/bin/env python3
-import sys
-import os
-from pathlib import Path
-from typing import Dict, Any, Optional
-from dataclasses import dataclass
-import hashlib
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
 import toml
+import jinja2
 import click
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, Tuple, List
+import hashlib
 import requests
+import re
+from urllib.parse import urljoin
+import shutil
+
+
+def parse_author(author_str: str) -> Tuple[str, str]:
+    """Parse author string into (name, email)."""
+    match = re.match(r"(.*?)\s*<(.+?)>", author_str)
+    if not match:
+        raise ValueError(f"Invalid author format: {author_str}")
+    return match.group(1).strip(), match.group(2).strip()
+
+
+def fetch_and_compute_checksums(url: str) -> Tuple[str, str]:
+    """Fetch a file and compute its SHA256 and SHA512 checksums."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        sha256 = hashlib.sha256()
+        sha512 = hashlib.sha512()
+
+        for chunk in response.iter_content(chunk_size=8192):
+            sha256.update(chunk)
+            sha512.update(chunk)
+
+        return sha256.hexdigest(), sha512.hexdigest()
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to download source: {e}")
+
+
+def validate_distribution_config(config: Dict[str, Any]) -> None:
+    """Validate the distribution configuration."""
+    required_sections = ["build", "distributions"]
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required section: {section}")
+
+    for dist, deps in config.get("distributions", {}).get("dependencies", {}).items():
+        if not isinstance(deps, list):
+            raise ValueError(f"Dependencies for {dist} must be a list")
+
 
 @dataclass
-class PackageInfo:
+class PackageMetadata:
     package_name: str
     version: str
     description: str
     license: str
-    github_user: str
     maintainer_name: str
     maintainer_email: str
     repo_url: str
-    sha512sum: Optional[str] = None
     sha256sum: Optional[str] = None
+    sha512sum: Optional[str] = None
 
-    def validate(self) -> None:
-        """Validate package information."""
-        if not all([self.package_name, self.version, self.description,
-                   self.license, self.github_user, self.maintainer_name,
-                   self.maintainer_email, self.repo_url]):
-            raise ValueError("All required fields must be non-empty")
+    @classmethod
+    def from_cargo_toml(cls, path: Path, dist_config: Dict[str, Any]) -> "PackageMetadata":
+        """Create metadata from Cargo.toml and distribution config."""
+        cargo_data = toml.load(path)
+        package = cargo_data.get("package", {})
 
-        # Validate version format
-        if not self.version.replace('.', '').isdigit():
-            raise ValueError(f"Invalid version format: {self.version}")
+        if not package:
+            raise ValueError("No [package] section found in Cargo.toml")
 
-        # Validate email format (basic check)
-        if '@' not in self.maintainer_email or '.' not in self.maintainer_email:
-            raise ValueError(f"Invalid email format: {self.maintainer_email}")
+        required_fields = ["name", "version", "description", "license", "authors"]
+        missing = [field for field in required_fields if not package.get(field)]
+        if missing:
+            raise ValueError(f"Missing required fields in Cargo.toml: {', '.join(missing)}")
 
-        # Validate GitHub URL format
-        if not self.repo_url.startswith('https://github.com/'):
-            raise ValueError(f"Invalid GitHub URL: {self.repo_url}")
-def compute_checksums(package_info: PackageInfo) -> PackageInfo:
-    """Compute SHA512 and SHA256 checksums for the source tarball."""
-    tarball_url = f"{package_info.repo_url}/archive/v{package_info.version}.tar.gz"
-    try:
-        response = requests.get(tarball_url, stream=True)
-        response.raise_for_status()
+        authors = package.get("authors", [])
+        if not authors:
+            raise ValueError("No authors found in Cargo.toml")
 
-        sha512 = hashlib.sha512()
-        sha256 = hashlib.sha256()
+        maintainer_name, maintainer_email = parse_author(authors[0])
 
-        for chunk in response.iter_content(chunk_size=8192):
-            sha512.update(chunk)
-            sha256.update(chunk)
+        return cls(
+            package_name=package["name"],
+            version=package["version"],
+            description=package["description"],
+            license=package["license"],
+            maintainer_name=maintainer_name,
+            maintainer_email=maintainer_email,
+            repo_url=package.get("repository", ""),
+        )
 
-        package_info.sha512sum = sha512.hexdigest()
-        package_info.sha256sum = sha256.hexdigest()
-        return package_info
-    except requests.RequestException as e:
-        raise RuntimeError(f"Failed to download source: {e}")
+    def compute_checksums(self) -> None:
+        """Compute SHA256 and SHA512 checksums for the source tarball."""
+        if not self.repo_url:
+            raise ValueError("Repository URL is required for checksum computation")
 
-def load_cargo_toml() -> Dict[str, Any]:
-    """Load information from Cargo.toml."""
-    try:
-        with open('Cargo.toml', 'r') as f:
-            return toml.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError("Cargo.toml not found in current directory")
-    except toml.TomlDecodeError as e:
-        raise ValueError(f"Invalid Cargo.toml: {e}")
+        tarball_url = f"{self.repo_url}/archive/v{self.version}.tar.gz"
+        self.sha256sum, self.sha512sum = fetch_and_compute_checksums(tarball_url)
 
-def create_package_info() -> PackageInfo:
-    """Create PackageInfo from Cargo.toml and environment variables."""
-    cargo_data = load_cargo_toml()
-    package_data = cargo_data.get('package', {})
+    def get_distribution_info(self, dist_name: str, dist_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get distribution-specific information."""
+        dist_info = dist_config.get("distributions", {})
+        return {
+            "architectures": dist_info.get("arch", ["x86_64"]),
+            "dependencies": dist_info.get("dependencies", {}).get(dist_name, []),
+            "libc_variant": dist_info.get("libc", {}).get(dist_name),
+        }
 
-    github_user = os.environ.get('GITHUB_USER', 'giannifer7')
 
-    info = PackageInfo(
-        package_name=package_data.get('name', ''),
-        version=package_data.get('version', ''),
-        description=package_data.get('description', ''),
-        license=package_data.get('license', ''),
-        github_user=github_user,
-        maintainer_name=package_data.get('authors', [''])[0].split('<')[0].strip(),
-        maintainer_email=package_data.get('authors', [''])[0].split('<')[1].rstrip('>'),
-        repo_url=f"https://github.com/{github_user}/{package_data.get('name', '')}"
-    )
+class PackageGenerator:
+    def __init__(self, project_root: Path):
+        self.project_root = project_root
+        self.packaging_dir = project_root / "packaging"
+        self.templates_dir = self.packaging_dir / "templates"
+        self.build_dir = self.packaging_dir / "build"
 
-    info.validate()
-    return info
-def setup_jinja_env() -> Environment:
-    """Set up the Jinja2 environment."""
-    packaging_dir = Path(__file__).parent.parent
-    env = Environment(
-        loader=FileSystemLoader(packaging_dir),
-        undefined=StrictUndefined,
-        trim_blocks=True,
-        lstrip_blocks=True
-    )
-    return env
+        self.env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(self.templates_dir),
+            undefined=jinja2.StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
 
-def generate_package_files(package_info: PackageInfo, skip_checksums: bool = False) -> None:
-    """Generate all package files from templates."""
-    if not skip_checksums:
-        package_info = compute_checksums(package_info)
+        config_file = self.packaging_dir / "config" / "metadata.toml"
+        self.config = toml.load(config_file)
+        validate_distribution_config(self.config)
 
-    env = setup_jinja_env()
+    def clean_build_directory(self) -> None:
+        """Clean all generated package files."""
+        if self.build_dir.exists():
+            shutil.rmtree(self.build_dir)
+            print(f"Cleaned build directory: {self.build_dir}")
 
-    # Templates to process
-    templates = {
-        'alpine/APKBUILD.in': 'alpine/APKBUILD',
-        'arch/PKGBUILD.in': 'arch/PKGBUILD',
-        'nix/default.nix.in': 'nix/default.nix',
-        'void/template.in': 'void/template'
-    }
+    def generate_all(self, metadata: PackageMetadata) -> None:
+        """Generate all package formats."""
+        formats = ["nix", "rpm", "deb", "arch", "alpine", "void-glibc", "void-musl"]
+        for format_name in formats:
+            self.generate_format(format_name, metadata)
 
-    context = package_info.__dict__
+    def get_output_path(self, format_name: str, metadata: PackageMetadata) -> Path:
+        """Get the output path for a given format."""
+        # Split format name for variants (e.g., 'void-musl' -> ('void', 'musl'))
+        parts = format_name.split("-")
+        base_format = parts[0]
+        variant = parts[1] if len(parts) > 1 else None
 
-    for template_path, output_path in templates.items():
-        try:
-            template = env.get_template(template_path)
-            rendered = template.render(**context)
+        output_files = {
+            "nix": "flake.nix",
+            "rpm": f"{metadata.package_name}.spec",
+            "deb": "control",
+            "arch": "PKGBUILD",
+            "alpine": "APKBUILD",
+            "void": "template",
+        }
 
-            # Ensure output directory exists
-            output_dir = Path(output_path).parent
-            os.makedirs(output_dir, exist_ok=True)
+        # Construct the build directory path
+        build_path = self.build_dir / base_format
+        if variant:
+            build_path = build_path / variant
 
-            with open(output_path, 'w') as f:
-                f.write(rendered)
+        return build_path / output_files[base_format]
 
-            print(f"Generated {output_path}")
+    def generate_format(self, format_name: str, metadata: PackageMetadata) -> None:
+        """Generate a specific package format."""
+        # Use base format name for template
+        base_format = format_name.split("-")[0]
+        template = self.env.get_template(f"{base_format}.jinja2")
 
-        except Exception as e:
-            print(f"Error processing {template_path}: {e}", file=sys.stderr)
+        output_path = self.get_output_path(format_name, metadata)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Combine metadata with distribution-specific info
+        template_data = {
+            **metadata.__dict__,
+            **metadata.get_distribution_info(format_name, self.config),
+        }
+
+        content = template.render(template_data)
+        output_path.write_text(content)
+        print(f"Generated {output_path}")
+
 
 @click.command()
-@click.option('--skip-checksums', is_flag=True, help='Skip checksum calculation')
-@click.option('--github-user', help='Override GitHub username')
-@click.option('--maintainer-name', help='Override maintainer name')
-@click.option('--maintainer-email', help='Override maintainer email')
-def main(skip_checksums: bool, github_user: Optional[str],
-         maintainer_name: Optional[str], maintainer_email: Optional[str]) -> None:
-    """Generate package files for various distributions."""
+@click.option(
+    "--cargo-toml",
+    type=click.Path(exists=True),
+    default="../../Cargo.toml",
+    help="Path to Cargo.toml",
+)
+@click.option(
+    "--compute-checksums/--skip-checksums",
+    default=True,
+    help="Whether to compute package checksums",
+)
+@click.option(
+    "--formats",
+    default="all",
+    help="Comma-separated list of formats to generate (all,nix,rpm,deb,arch,alpine,void-glibc,void-musl)",
+)
+@click.option("--clean", is_flag=True, help="Clean build directory before generating packages")
+def main(cargo_toml: str, compute_checksums: bool, formats: str, clean: bool) -> None:
+    """Generate package files for various distributions"""
+    project_root = Path(cargo_toml).parent
+
     try:
-        package_info = create_package_info()
+        generator = PackageGenerator(project_root)
 
-        # Override values if provided
-        if github_user:
-            package_info.github_user = github_user
-        if maintainer_name:
-            package_info.maintainer_name = maintainer_name
-        if maintainer_email:
-            package_info.maintainer_email = maintainer_email
+        if clean:
+            generator.clean_build_directory()
 
-        package_info.validate()
-        generate_package_files(package_info, skip_checksums)
+        # Load metadata
+        metadata = PackageMetadata.from_cargo_toml(Path(cargo_toml), generator.config)
 
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        # Compute checksums if requested
+        if compute_checksums:
+            metadata.compute_checksums()
 
-if __name__ == '__main__':
+        # Generate packages
+        if formats == "all":
+            generator.generate_all(metadata)
+        else:
+            for fmt in formats.split(","):
+                generator.generate_format(fmt.strip(), metadata)
+
+    except (ValueError, RuntimeError) as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+
+if __name__ == "__main__":
     main()

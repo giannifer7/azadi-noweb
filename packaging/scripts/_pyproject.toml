@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "package-generator"
+version = "0.1.0"
+description = "Package generation tools for azadi-noweb"
+authors = ["Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+click = "^8.1.7"
+jinja2 = "^3.1.2"
+toml = "^0.10.2"
+requests = "^2.31.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

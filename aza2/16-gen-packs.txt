@@ -1,0 +1,307 @@
+I'll help organize a complete set of files for the packaging system. Let me break this down into multiple blocks using the noweb format.
+
+<[@file packaging/scripts/generate_packages.py]>=
+#!/usr/bin/env python3
+
+import toml
+import jinja2
+import click
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, Any, Optional, Tuple, List
+import hashlib
+import requests
+import re
+from urllib.parse import urljoin
+
+def parse_author(author_str: str) -> Tuple[str, str]:
+    """Parse author string into (name, email)."""
+    match = re.match(r'(.*?)\s*<(.+?)>', author_str)
+    if not match:
+        raise ValueError(f"Invalid author format: {author_str}")
+    return match.group(1).strip(), match.group(2).strip()
+
+def fetch_and_compute_checksums(url: str) -> Tuple[str, str]:
+    """Fetch a file and compute its SHA256 and SHA512 checksums."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        sha256 = hashlib.sha256()
+        sha512 = hashlib.sha512()
+
+        for chunk in response.iter_content(chunk_size=8192):
+            sha256.update(chunk)
+            sha512.update(chunk)
+
+        return sha256.hexdigest(), sha512.hexdigest()
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to download source: {e}")
+
+def validate_distribution_config(config: Dict[str, Any]) -> None:
+    """Validate the distribution configuration."""
+    required_sections = ['paths', 'distributions']
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required section: {section}")
+
+    for dist, deps in config.get('distributions', {}).get('dependencies', {}).items():
+        if not isinstance(deps, list):
+            raise ValueError(f"Dependencies for {dist} must be a list")
+
+    for name, path in config.get('paths', {}).items():
+        if not isinstance(path, str):
+            raise ValueError(f"Path for {name} must be a string")
+
+@dataclass
+class PackageMetadata:
+    package_name: str
+    version: str
+    description: str
+    license: str
+    maintainer_name: str
+    maintainer_email: str
+    repo_url: str
+    sha256sum: Optional[str] = None
+    sha512sum: Optional[str] = None
+
+    @classmethod
+    def from_cargo_toml(cls, path: Path, dist_config: Dict[str, Any]) -> 'PackageMetadata':
+        """Create metadata from Cargo.toml and distribution config."""
+        cargo_data = toml.load(path)
+        package = cargo_data.get('package', {})
+
+        if not package:
+            raise ValueError("No [package] section found in Cargo.toml")
+
+        required_fields = ['name', 'version', 'description', 'license', 'authors']
+        missing = [field for field in required_fields if not package.get(field)]
+        if missing:
+            raise ValueError(f"Missing required fields in Cargo.toml: {', '.join(missing)}")
+
+        authors = package.get('authors', [])
+        if not authors:
+            raise ValueError("No authors found in Cargo.toml")
+
+        maintainer_name, maintainer_email = parse_author(authors[0])
+
+        return cls(
+            package_name=package['name'],
+            version=package['version'],
+            description=package['description'],
+            license=package['license'],
+            maintainer_name=maintainer_name,
+            maintainer_email=maintainer_email,
+            repo_url=package.get('repository', '')
+        )
+
+    def compute_checksums(self) -> None:
+        """Compute SHA256 and SHA512 checksums for the source tarball."""
+        if not self.repo_url:
+            raise ValueError("Repository URL is required for checksum computation")
+
+        tarball_url = f"{self.repo_url}/archive/v{self.version}.tar.gz"
+        self.sha256sum, self.sha512sum = fetch_and_compute_checksums(tarball_url)
+
+    def get_distribution_info(self, dist_name: str, dist_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get distribution-specific information."""
+        dist_info = dist_config.get('distributions', {})
+        return {
+            'architectures': dist_info.get('arch', ['x86_64']),
+            'dependencies': dist_info.get('dependencies', {}).get(dist_name, [])
+        }
+
+class PackageGenerator:
+    def __init__(self, template_dir: Path, output_base: Path):
+        self.env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(template_dir),
+            undefined=jinja2.StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+        self.output_base = output_base
+        self.config = toml.load(template_dir / 'metadata.toml')
+        validate_distribution_config(self.config)
+
+    def generate_all(self, metadata: PackageMetadata):
+        """Generate all package formats."""
+        for format_name in ['nix', 'rpm', 'deb', 'arch', 'alpine', 'void']:
+            self.generate_format(format_name, metadata)
+
+    def generate_format(self, format_name: str, metadata: PackageMetadata):
+        """Generate a specific package format."""
+        template = self.env.get_template(f'{format_name}.jinja2')
+        output_path = self.get_output_path(format_name)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Combine metadata with distribution-specific info
+        template_data = {
+            **metadata.__dict__,
+            **metadata.get_distribution_info(format_name, self.config)
+        }
+
+        content = template.render(template_data)
+        output_path.write_text(content)
+        print(f"Generated {output_path}")
+
+    def get_output_path(self, format_name: str) -> Path:
+        """Get the output path for a given format."""
+        output_files = {
+            'nix': 'flake.nix',
+            'rpm': 'azadi-noweb.spec',
+            'deb': 'control',
+            'arch': 'PKGBUILD',
+            'alpine': 'APKBUILD',
+            'void': 'template'
+        }
+        base_path = self.output_base / self.config['paths'].get(format_name, f'packaging/{format_name}')
+        return base_path / output_files[format_name]
+
+@click.command()
+@click.option('--cargo-toml', type=click.Path(exists=True), default='Cargo.toml',
+              help='Path to Cargo.toml')
+@click.option('--compute-checksums/--skip-checksums', default=True,
+              help='Whether to compute package checksums')
+@click.option('--formats', default='all',
+              help='Comma-separated list of formats to generate (all,nix,rpm,deb,arch,alpine,void)')
+def main(cargo_toml: str, compute_checksums: bool, formats: str):
+    """Generate package files for various distributions"""
+    template_dir = Path(__file__).parent.parent / 'templates'
+    output_base = Path(__file__).parent.parent.parent
+
+    try:
+        # Load distribution config
+        dist_config = toml.load(template_dir / 'metadata.toml')
+        validate_distribution_config(dist_config)
+
+        # Load metadata
+        metadata = PackageMetadata.from_cargo_toml(Path(cargo_toml), dist_config)
+
+        # Compute checksums if requested
+        if compute_checksums:
+            metadata.compute_checksums()
+
+        # Generate packages
+        generator = PackageGenerator(template_dir, output_base)
+        if formats == 'all':
+            generator.generate_all(metadata)
+        else:
+            for fmt in formats.split(','):
+                generator.generate_format(fmt.strip(), metadata)
+
+    except (ValueError, RuntimeError) as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.Abort()
+
+if __name__ == '__main__':
+    main()
+$$
+
+Now let's create an example template for each format:
+
+<[@file packaging/templates/nix.jinja2]>=
+{
+  description = "{{ description }}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in
+      {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "{{ package_name }}";
+          version = "{{ version }}";
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          meta = with pkgs.lib; {
+            description = "{{ description }}";
+            homepage = "{{ repo_url }}";
+            license = licenses.{{ license|lower }};
+            maintainers = [ maintainers.{{ maintainer_name|lower }} ];
+          };
+        };
+      }
+    );
+}
+$$
+
+<[@file packaging/templates/arch.jinja2]>=
+# Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+pkgname={{ package_name }}
+pkgver={{ version }}
+pkgrel=1
+pkgdesc="{{ description }}"
+arch=({% for arch in architectures %}'{{ arch }}'{% if not loop.last %} {% endif %}{% endfor %})
+url="{{ repo_url }}"
+license=('{{ license }}')
+depends=({% for dep in dependencies %}'{{ dep }}'{% if not loop.last %} {% endif %}{% endfor %})
+makedepends=('rust' 'cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha512sums=('{{ sha512sum }}')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --release
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+$$
+
+<[@file packaging/templates/metadata.toml]>=
+# Output paths for each package format
+[paths]
+rpm = "packaging/rpm"
+deb = "packaging/deb"
+arch = "packaging/arch"
+alpine = "packaging/alpine"
+void = "packaging/void"
+nix = "."  # Nix files go in root for flake support
+
+[distributions]
+# Supported architectures per distribution
+arch = ["x86_64", "aarch64"]
+
+# Distribution-specific dependencies
+[distributions.dependencies]
+alpine = ["musl"]
+arch = ["gcc-libs"]
+void = []
+deb = []
+rpm = ["glibc >= 2.28"]
+$$
+
+The script provides:
+1. Robust error handling and validation
+2. Checksum computation for source tarballs
+3. Distribution-specific configuration
+4. Template rendering with proper context
+
+Would you like me to:
+1. Add more template examples?
+2. Add more validation rules?
+3. Add more CLI options?
+4. Show how to test the package generation?

@@ -1,0 +1,210 @@
+Sure! Let's create a unified packaging system. First, let's set up the template structure:
+
+<[@file packaging/templates/metadata.toml]>=
+# Common metadata for all package formats
+[metadata]
+package_name = "{{ package_name }}"
+version = "{{ version }}"
+description = "{{ description }}"
+license = "{{ license }}"
+github_user = "{{ github_user }}"
+maintainer_name = "{{ maintainer_name }}"
+maintainer_email = "{{ maintainer_email }}"
+repo_url = "{{ repo_url }}"
+
+[paths]
+# Where to put generated files
+rpm = "packaging/rpm"
+deb = "packaging/deb"
+arch = "packaging/arch"
+alpine = "packaging/alpine"
+void = "packaging/void"
+nix = "."  # Nix files go in root for flake support
+$$
+
+Then let's organize all templates:
+
+<[@file packaging/scripts/generate_packages.py]>=
+#!/usr/bin/env python3
+
+import toml
+import jinja2
+import click
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, Any, Optional
+import hashlib
+import requests
+
+@dataclass
+class PackageMetadata:
+    package_name: str
+    version: str
+    description: str
+    license: str
+    github_user: str
+    maintainer_name: str
+    maintainer_email: str
+    repo_url: str
+    sha512sum: Optional[str] = None
+    sha256sum: Optional[str] = None
+
+    @classmethod
+    def from_cargo_toml(cls, path: Path) -> 'PackageMetadata':
+        """Create metadata from Cargo.toml"""
+        cargo_data = toml.load(path)
+        package = cargo_data.get('package', {})
+
+        return cls(
+            package_name=package.get('name', ''),
+            version=package.get('version', ''),
+            description=package.get('description', ''),
+            license=package.get('license', ''),
+            github_user=package.get('authors', [''])[0].split('<')[0].strip(),
+            maintainer_name=package.get('authors', [''])[0].split('<')[0].strip(),
+            maintainer_email=package.get('authors', [''])[0].split('<')[1].rstrip('>'),
+            repo_url=package.get('homepage', '')
+        )
+
+class PackageGenerator:
+    def __init__(self, template_dir: Path, output_base: Path):
+        self.env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(template_dir),
+            undefined=jinja2.StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+        self.output_base = output_base
+
+        # Load output paths configuration
+        self.paths = toml.load(template_dir / 'metadata.toml').get('paths', {})
+
+    def generate_all(self, metadata: PackageMetadata):
+        """Generate all package formats"""
+        for format_name in ['nix', 'rpm', 'deb', 'arch', 'alpine', 'void']:
+            self.generate_format(format_name, metadata)
+
+    def generate_format(self, format_name: str, metadata: PackageMetadata):
+        """Generate a specific package format"""
+        template = self.env.get_template(f'{format_name}.jinja2')
+        output_dir = self.output_base / self.paths.get(format_name, f'packaging/{format_name}')
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine output filename based on format
+        output_files = {
+            'nix': 'flake.nix',
+            'rpm': 'azadi-noweb.spec',
+            'deb': 'control',
+            'arch': 'PKGBUILD',
+            'alpine': 'APKBUILD',
+            'void': 'template'
+        }
+
+        output_file = output_dir / output_files[format_name]
+
+        # Render template
+        content = template.render(metadata.__dict__)
+
+        # Write output
+        output_file.write_text(content)
+        print(f"Generated {output_file}")
+
+@click.command()
+@click.option('--cargo-toml', type=click.Path(exists=True), default='Cargo.toml',
+              help='Path to Cargo.toml')
+@click.option('--compute-checksums/--skip-checksums', default=True,
+              help='Whether to compute package checksums')
+def main(cargo_toml: str, compute_checksums: bool):
+    """Generate package files for various distributions"""
+    template_dir = Path(__file__).parent.parent / 'templates'
+    output_base = Path(__file__).parent.parent.parent
+
+    # Load metadata
+    metadata = PackageMetadata.from_cargo_toml(Path(cargo_toml))
+
+    # Compute checksums if requested
+    if compute_checksums:
+        metadata.compute_checksums()
+
+    # Generate packages
+    generator = PackageGenerator(template_dir, output_base)
+    generator.generate_all(metadata)
+
+if __name__ == '__main__':
+    main()
+$$
+
+Now let's add a template for each format. Here's an example of how they would work together:
+
+<[@file packaging/templates/nix.jinja2]>=
+{
+  description = "{{ description }}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+      in
+      {
+        packages.default = pkgs.rustPlatform.buildRustPackage {
+          pname = "{{ package_name }}";
+          version = "{{ version }}";
+          src = ./.;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          meta = with pkgs.lib; {
+            description = "{{ description }}";
+            homepage = "{{ repo_url }}";
+            license = licenses.{{ license|lower }};
+            maintainers = with maintainers; [ {{ github_user }} ];
+          };
+        };
+      }
+    );
+}
+$$
+
+<[@file justfile]>=
+# Previous tasks...
+
+# Generate all package files
+generate-packages:
+    python packaging/scripts/generate_packages.py
+
+# Generate packages without computing checksums
+generate-packages-fast:
+    python packaging/scripts/generate_packages.py --skip-checksums
+
+# Update packages and push to cache
+update-packages: generate-packages nix-build
+    cachix push azadi-noweb result
+$$
+
+This system:
+1. Uses a single source of truth (Cargo.toml + metadata.toml)
+2. Generates consistent package definitions for all formats
+3. Maintains proper directory structure
+4. Integrates with the build system via just tasks
+
+Would you like me to:
+1. Add more template formats?
+2. Add validation for the generated files?
+3. Add more package metadata fields?
+4. Show how to add custom package-specific configurations?

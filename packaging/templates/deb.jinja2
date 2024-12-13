@@ -1,0 +1,12 @@
+Package: {{ package_name }}
+Version: {{ version }}
+Section: utils
+Priority: optional
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+Description: {{ description }}
+ {{ description }}
+ .
+ This package provides a command-line tool for literate programming,
+ allowing developers to write code and documentation in a single source file.

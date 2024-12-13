@@ -1,0 +1,19 @@
+# Template file for 'azadi-noweb'
+pkgname=azadi-noweb
+version=0.1.3
+revision=1
+build_style=cargo
+archs="~*-musl"
+short_desc="A Rust implementation of noweb-style literate programming tool"
+maintainer="Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"
+license="MIT"
+homepage="https://github.com/giannifer7/azadi-noweb"
+distfiles="${homepage}/archive/v${version}.tar.gz"
+checksum="e5ad95409126b1bb06f240816bb631ad0e62abbe8c5e54a287b67b6a3e0a95224e504e8ef89c23d6985f4b5c7289138352529804947ea6aa127973f6345acba8"
+makedepends="musl"
+
+do_install() {
+    vbin target/release/$pkgname
+    vlicense LICENSE
+    vdoc README.md
+}

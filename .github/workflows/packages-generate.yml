@@ -1,0 +1,41 @@
+name: Generate Package Files
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: "Package version"
+        value: ${{ jobs.generate.outputs.version }}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install uv
+        run: |
+          pip install uv
+          uv pip install -e ".[dev]"
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate package files
+        run: python -m generate_packages
+
+      - name: Upload package files
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build/
