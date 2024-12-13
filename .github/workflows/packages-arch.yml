@@ -12,12 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up non-root user
         shell: bash
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          chown -R builder:builder /github/workspace
+          chown -R builder:builder .
 
       - name: Download package files
         uses: actions/download-artifact@v4
@@ -53,4 +56,3 @@ jobs:
         with:
           name: arch-package
           path: /home/builder/packaging/build/arch/*.pkg.tar.zst
-
