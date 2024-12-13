@@ -24,7 +24,7 @@ jobs:
         shell: sh
         run: |
           xbps-install -Syu
-          xbps-install -y bash git gcc libstdc++ sudo rust cargo base-devel
+          xbps-install -y bash git gcc libstdc++ sudo
 
       - name: Set up build directories
         shell: sh
@@ -45,11 +45,10 @@ jobs:
           name: package-files
           path: /home/builder/packaging/build
 
-      - name: Update Cargo.lock
+      - name: Install build dependencies
         shell: bash
         run: |
-          cd /home/builder/packaging/build/void/glibc
-          cargo generate-lockfile
+          xbps-install -y base-devel rust cargo
 
       - name: Build package
         shell: bash
@@ -113,10 +112,6 @@ jobs:
               useradd -m builder
               echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
               chown -R builder:builder /workspace
-
-              # Update Cargo.lock file
-              cd /workspace/packaging/build/void/musl
-              su builder -c "cargo generate-lockfile"
 
               su builder -c "
                 cd /usr/src
