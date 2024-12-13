@@ -13,47 +13,44 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Set up non-root user
+        shell: bash
         run: |
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           chown -R builder:builder /github/workspace
-        shell: bash
 
       - name: Download package files
         uses: actions/download-artifact@v4
         with:
           name: package-files
           path: /home/builder/packaging/build
-        shell: bash
 
       - name: Install build dependencies
+        shell: bash
         run: |
           sudo pacman -Syu --noconfirm
           sudo pacman -S --noconfirm rust cargo git
-        shell: bash
 
       - name: Build package
+        shell: bash
         run: |
           cd /home/builder/packaging/build/arch
-          makepkg -si --noconfirm
-        shell: bash
+          sudo -u builder makepkg -si --noconfirm
         env:
           HOME: /home/builder
-        # Run as the non-root user
-        run-as: builder
 
       - name: Test package
+        shell: bash
         run: |
           pacman -U --noconfirm *.pkg.tar.zst
           azadi-noweb --version
           azadi-noweb --help
-        shell: bash
         env:
           HOME: /home/builder
-        run-as: builder
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: arch-package
           path: /home/builder/packaging/build/arch/*.pkg.tar.zst
+
