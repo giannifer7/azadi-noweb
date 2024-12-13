@@ -26,6 +26,13 @@ jobs:
           xbps-install -Syu
           xbps-install -y bash git gcc libstdc++
 
+      - name: Set up builder user
+        shell: sh
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder /home/builder
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -44,20 +51,20 @@ jobs:
         shell: bash
         run: |
           cd /home/builder/packaging/build/void/glibc
-          # Copy template to proper location
-          mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
-          cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
-          # Clone void-packages
-          git clone --depth 1 https://github.com/void-linux/void-packages
-          cd void-packages
-          # Set up environment
-          ./xbps-src binary-bootstrap
-          # Build package
-          ./xbps-src pkg azadi-noweb
+          # Set up build environment
+          sudo -u builder bash -c '
+            mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
+            cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
+            git clone --depth 1 https://github.com/void-linux/void-packages
+            cd void-packages
+            ./xbps-src binary-bootstrap
+            ./xbps-src pkg azadi-noweb
+          '
 
       - name: Test package
         shell: bash
         run: |
+          cd /home/builder/void-packages
           xbps-rindex -a hostdir/binpkgs/azadi-noweb-*.xbps
           xbps-install -y hostdir/binpkgs/azadi-noweb-*.xbps
           azadi-noweb --version
@@ -67,26 +74,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: void-glibc-package
-          path: void-packages/hostdir/binpkgs/azadi-noweb-*.xbps
+          path: /home/builder/void-packages/hostdir/binpkgs/azadi-noweb-*.xbps
 
   build-musl:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/void-linux/void-linux:latest-full-x86_64-musl
-      options: --init
     steps:
-      - name: Update XBPS
-        shell: sh
-        run: |
-          xbps-install -S
-          xbps-install -yu xbps
-
-      - name: Install basic dependencies
-        shell: sh
-        run: |
-          xbps-install -Syu
-          xbps-install -y bash git gcc gcompat
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -94,38 +86,42 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: package-files
-          path: /home/builder/packaging/build
+          path: packaging/build
 
-      - name: Install build dependencies
-        shell: bash
+      - name: Build in container
         run: |
-          xbps-install -y base-devel rust cargo
+          docker run --rm -v ${{ github.workspace }}:/workspace \
+            ghcr.io/void-linux/void-linux:latest-full-x86_64-musl \
+            sh -c '
+              set -ex
+              # System updates
+              xbps-install -S
+              xbps-install -yu xbps
+              xbps-install -Syu
+              xbps-install -y bash git gcc gcompat base-devel rust cargo
 
-      - name: Build package
-        shell: bash
-        run: |
-          cd /home/builder/packaging/build/void/musl
-          # Copy template to proper location
-          mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
-          cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
-          # Clone void-packages
-          git clone --depth 1 https://github.com/void-linux/void-packages
-          cd void-packages
-          # Set up environment
-          ./xbps-src binary-bootstrap
-          # Build package
-          ./xbps-src pkg azadi-noweb
+              # Create builder user
+              useradd -m builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              chown -R builder:builder /workspace
 
-      - name: Test package
-        shell: bash
-        run: |
-          xbps-rindex -a hostdir/binpkgs/azadi-noweb-*.xbps
-          xbps-install -y hostdir/binpkgs/azadi-noweb-*.xbps
-          azadi-noweb --version
-          azadi-noweb --help
+              # Build as builder user
+              sudo -u builder bash -c "
+                cd /workspace/packaging/build/void/musl
+                mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
+                cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
+                git clone --depth 1 https://github.com/void-linux/void-packages
+                cd void-packages
+                ./xbps-src binary-bootstrap
+                ./xbps-src pkg azadi-noweb
+              "
+              # Copy artifacts out with proper permissions
+              cp void-packages/hostdir/binpkgs/azadi-noweb-*.xbps /workspace/
+              chown root:root /workspace/azadi-noweb-*.xbps
+            '
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: void-musl-package
-          path: void-packages/hostdir/binpkgs/azadi-noweb-*.xbps
+          path: azadi-noweb-*.xbps
