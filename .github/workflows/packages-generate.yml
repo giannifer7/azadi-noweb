@@ -37,6 +37,7 @@ jobs:
       - name: Generate package files
         run: |
           cd packaging/scripts
+          source .venv/bin/activate
           python generate_packages.py
 
       - name: Upload package files
