@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 generate_packages = "generate_packages:main"
+docker_void = "docker_void:main"
 
 [project.optional-dependencies]
 dev = [

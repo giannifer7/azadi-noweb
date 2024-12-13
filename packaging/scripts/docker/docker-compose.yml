@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  void-glibc:
+    image: ghcr.io/void-linux/void-linux:latest-full-x86_64
+    volumes:
+      - ../../..:/workspace
+      - void-glibc-cargo:/root/.cargo
+      - void-glibc-cache:/var/cache/xbps
+    working_dir: /workspace/packaging/build/void/glibc
+    command: sleep infinity
+    init: true
+
+  void-musl:
+    image: ghcr.io/void-linux/void-linux:latest-full-x86_64-musl
+    volumes:
+      - ../../..:/workspace
+      - void-musl-cargo:/root/.cargo
+      - void-musl-cache:/var/cache/xbps
+    working_dir: /workspace/packaging/build/void/musl
+    command: sleep infinity
+    init: true
+
+volumes:
+  void-glibc-cargo:
+  void-glibc-cache:
+  void-musl-cargo:
+  void-musl-cache:
