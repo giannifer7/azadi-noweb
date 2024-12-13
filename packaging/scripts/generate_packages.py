@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
-import toml
-import jinja2
-import click
-from pathlib import Path
-from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple, List
 import hashlib
-import requests
 import re
-from urllib.parse import urljoin
 import shutil
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple, List
+from urllib.parse import urljoin
+
+import click
+import jinja2
+import requests
 
 
 def parse_author(author_str: str) -> Tuple[str, str]:
@@ -66,7 +67,8 @@ class PackageMetadata:
     @classmethod
     def from_cargo_toml(cls, path: Path, dist_config: Dict[str, Any]) -> "PackageMetadata":
         """Create metadata from Cargo.toml and distribution config."""
-        cargo_data = toml.load(path)
+        with open(path, "rb") as f:
+            cargo_data = tomllib.load(f)
         package = cargo_data.get("package", {})
 
         if not package:
@@ -126,7 +128,8 @@ class PackageGenerator:
         )
 
         config_file = self.packaging_dir / "config" / "metadata.toml"
-        self.config = toml.load(config_file)
+        with open(config_file, "rb") as f:
+            self.config = tomllib.load(f)
         validate_distribution_config(self.config)
 
     def clean_build_directory(self) -> None:

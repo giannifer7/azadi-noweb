@@ -3,21 +3,13 @@ pkgname={{ package_name }}
 version={{ version }}
 revision=1
 build_style=cargo
-{% if libc_variant == "musl" %}
-archs="~*-musl"
-{% endif %}
 short_desc="{{ description }}"
-maintainer="{{ maintainer_name }} <{{ maintainer_email }}>"
+maintainer="{{ maintainer }}"
 license="{{ license }}"
-homepage="{{ repo_url }}"
+homepage="{{ homepage }}"
 distfiles="${homepage}/archive/v${version}.tar.gz"
-checksum="{{ sha512sum }}"
-{% if dependencies %}
-makedepends="{{ dependencies|join(' ') }}"
-{% endif %}
+checksum="{{ checksum }}"  {# SHA256 checksum of the release tarball #}
 
-do_install() {
-    vbin target/release/$pkgname
-    vlicense LICENSE
-    vdoc README.md
+post_install() {
+	vlicense LICENSE
 }
