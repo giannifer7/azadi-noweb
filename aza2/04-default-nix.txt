@@ -1,23 +1,12 @@
-Ah, I understand now. You need a default.nix to build the project when testing the Cachix setup. Here's what we need:
+Ah, I see the issue. The version extraction is failing. Let's fix the default.nix by using a simpler approach:
 
 <[@file default.nix]>=
 # default.nix
 { pkgs ? import <nixpkgs> {} }:
 
-let
-  # Extract version from Cargo.toml
-  version = builtins.readFile (pkgs.runCommand "version" {}
-    ''
-      ${pkgs.rust}/bin/cargo metadata --manifest-path=${toString ./Cargo.toml} \
-        --format-version=1 \
-        --no-deps \
-        | ${pkgs.jq}/bin/jq -r '.packages[0].version' \
-        > $out
-    '');
-
-in pkgs.rustPlatform.buildRustPackage {
+pkgs.rustPlatform.buildRustPackage rec {
   pname = "azadi-noweb";
-  inherit version;
+  version = "0.1.2";  # This should match your Cargo.toml
 
   src = ./.;
 
@@ -35,13 +24,14 @@ in pkgs.rustPlatform.buildRustPackage {
 }
 $$
 
-This default.nix:
-1. Uses the local source instead of fetching from GitHub (since we're testing locally)
-2. Extracts the version from Cargo.toml automatically
-3. Uses the local Cargo.lock file
-4. Includes all the necessary metadata
+The main changes are:
+1. Removed the complex version extraction
+2. Hardcoded the version (it should match your Cargo.toml)
+3. Simplified the overall structure
 
-This will work with Cachix's test workflow as it provides a standard Nix build target. Would you like me to:
-1. Add more build options or dependencies?
-2. Add development shell integration?
-3. Add cross-compilation support?
+This should work better with Cachix's test workflow. We can add automatic version extraction later as a separate improvement once we have the basic CI working.
+
+Would you like me to:
+1. Show how to add automatic version extraction in a safer way?
+2. Add more build configuration options?
+3. Improve the error handling?

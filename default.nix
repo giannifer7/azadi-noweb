@@ -1,20 +1,9 @@
 # default.nix
 { pkgs ? import <nixpkgs> {} }:
 
-let
-  # Extract version from Cargo.toml
-  version = builtins.readFile (pkgs.runCommand "version" {}
-    ''
-      ${pkgs.rust}/bin/cargo metadata --manifest-path=${toString ./Cargo.toml} \
-        --format-version=1 \
-        --no-deps \
-        | ${pkgs.jq}/bin/jq -r '.packages[0].version' \
-        > $out
-    '');
-
-in pkgs.rustPlatform.buildRustPackage {
+pkgs.rustPlatform.buildRustPackage rec {
   pname = "azadi-noweb";
-  inherit version;
+  version = "0.1.2";  # This should match your Cargo.toml
 
   src = ./.;
 
