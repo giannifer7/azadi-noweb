@@ -1,4 +1,5 @@
 name: Build Arch Package
+
 on:
   workflow_call:
     inputs:
@@ -11,29 +12,48 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Set up non-root user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder /github/workspace
+        shell: bash
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
         with:
           name: package-files
-          path: packaging/build
+          path: /home/builder/packaging/build
+        shell: bash
 
       - name: Install build dependencies
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm rust cargo git
+          sudo pacman -Syu --noconfirm
+          sudo pacman -S --noconfirm rust cargo git
+        shell: bash
 
       - name: Build package
         run: |
-          cd packaging/build/arch
+          cd /home/builder/packaging/build/arch
           makepkg -si --noconfirm
+        shell: bash
+        env:
+          HOME: /home/builder
+        # Run as the non-root user
+        run-as: builder
 
       - name: Test package
         run: |
           pacman -U --noconfirm *.pkg.tar.zst
           azadi-noweb --version
           azadi-noweb --help
+        shell: bash
+        env:
+          HOME: /home/builder
+        run-as: builder
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: arch-package
-          path: packaging/build/arch/*.pkg.tar.zst
+          path: /home/builder/packaging/build/arch/*.pkg.tar.zst
