@@ -64,6 +64,7 @@ class PackageMetadata:
     maintainer_name: str
     maintainer_email: str
     repo_url: str
+    homepage: str
     sha256sum: Optional[str] = None
     sha512sum: Optional[str] = None
 
@@ -93,6 +94,11 @@ class PackageMetadata:
 
         maintainer_name, maintainer_email = parse_author(authors[0])
 
+        # Get homepage from either homepage or repository field
+        homepage = package.get("homepage", package.get("repository", ""))
+        if not homepage:
+            raise ValueError("Either homepage or repository must be specified in Cargo.toml")
+
         return cls(
             package_name=package["name"],
             version=package["version"],
@@ -100,7 +106,8 @@ class PackageMetadata:
             license=package["license"],
             maintainer_name=maintainer_name,
             maintainer_email=maintainer_email,
-            repo_url=package.get("repository", ""),
+            repo_url=package.get("repository", homepage),  # Fallback to homepage if no repository
+            homepage=homepage,
         )
 
     def compute_checksums(self) -> None:
