@@ -1,0 +1,82 @@
+Ah, the issue is with the cargo config structure in `.cargo/config.toml`. For Nix builds, we need to separate the packaging metadata from the cargo config. Let's organize it differently:
+
+1. Move the packaging metadata to a separate file:
+
+<[@file packaging/cargo-metadata.toml]>=
+[package.metadata.rpm]
+package = "azadi-noweb"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+azadi-noweb = { path = "/usr/bin/azadi-noweb" }
+
+[package.metadata.rpm.dependencies]
+glibc = ">= 2.28"
+
+[package.metadata.deb]
+maintainer = "Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"
+copyright = "2024, Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"
+license-file = ["LICENSE", "4"]
+extended-description = """
+A Rust implementation of noweb-style literate programming tool.
+Allows developers to write code and documentation in a single source file,
+with the ability to extract either the code or documentation as needed."""
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/azadi-noweb", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/azadi-noweb/README.md", "644"],
+]
+$$
+
+2. Keep `.cargo/config.toml` minimal:
+
+<[@file .cargo/config.toml]>=
+[build]
+target-dir = "target"
+$$
+
+3. Update the default.nix to handle the build properly:
+
+<[@file default.nix]>=
+# default.nix
+{ pkgs ? import <nixpkgs> {} }:
+
+pkgs.rustPlatform.buildRustPackage rec {
+  pname = "azadi-noweb";
+  version = "0.1.2";  # This should match your Cargo.toml
+
+  src = ./.;
+
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
+
+  # Don't run tests in parallel
+  cargoParallelTestThreads = 1;
+
+  # Skip the cargo config to avoid metadata parsing issues
+  CARGO_CONFIG = "";
+
+  meta = with pkgs.lib; {
+    description = "A Rust implementation of noweb-style literate programming tool";
+    homepage = "https://github.com/giannifer7/azadi-noweb";
+    license = licenses.mit;
+    maintainers = with maintainers; [ giannifer7 ];
+    mainProgram = "azadi-noweb";
+  };
+}
+$$
+
+This separation should:
+1. Fix the Nix build issues with cargo config parsing
+2. Keep the packaging metadata available for other package formats
+3. Maintain a clean build configuration for normal development
+
+Would you like me to:
+1. Add more build configurations to `.cargo/config.toml`?
+2. Include additional Nix build options?
+3. Add a way to merge these configurations during package builds?
