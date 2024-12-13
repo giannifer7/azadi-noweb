@@ -1,3 +1,14 @@
+Yes, let's add the signing key to GitHub Actions.
+
+1. Go to your GitHub repository's settings
+2. Navigate to Secrets and Variables → Actions
+3. Add a new repository secret with:
+   - Name: `CACHIX_SIGNING_KEY`
+   - Value: (paste your signing key)
+
+Then, let's update the workflow to use both keys:
+
+<[@file .github/workflows/cachix.yml]>=
 name: "Cachix"
 on:
   pull_request:
@@ -25,3 +36,10 @@ jobs:
     - name: Build
       run: |
         nix-build --show-trace
+$$
+
+The main changes are:
+1. Added `signingKey` to the cachix-action configuration
+2. Removed the push filter since we now have both keys
+
+Would you like me to make any other changes to the workflow?
