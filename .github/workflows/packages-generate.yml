@@ -35,7 +35,9 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate package files
-        run: python generate_packages.py
+        run: |
+          cd packaging/scripts
+          python generate_packages.py
 
       - name: Upload package files
         uses: actions/upload-artifact@v4
