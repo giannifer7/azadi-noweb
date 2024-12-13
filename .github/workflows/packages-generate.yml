@@ -23,6 +23,7 @@ jobs:
       - name: Install uv
         run: |
           pip install uv
+          cd packaging/scripts
           uv venv
           source .venv/bin/activate
           uv pip install -e ".[dev]"
