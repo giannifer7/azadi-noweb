@@ -17,14 +17,12 @@ jobs:
       - name: Update XBPS
         shell: sh
         run: |
-          # First sync and update xbps itself
           xbps-install -S
           xbps-install -yu xbps
 
       - name: Install basic dependencies
         shell: sh
         run: |
-          # Now update everything else
           xbps-install -Syu
           xbps-install -y bash git gcc libstdc++
 
@@ -46,13 +44,22 @@ jobs:
         shell: bash
         run: |
           cd /home/builder/packaging/build/void/glibc
-          ./build.sh
+          # Copy template to proper location
+          mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
+          cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
+          # Clone void-packages
+          git clone --depth 1 https://github.com/void-linux/void-packages
+          cd void-packages
+          # Set up environment
+          ./xbps-src binary-bootstrap
+          # Build package
+          ./xbps-src pkg azadi-noweb
 
       - name: Test package
         shell: bash
         run: |
-          xbps-rindex -a *.xbps
-          xbps-install -y *.xbps
+          xbps-rindex -a hostdir/binpkgs/azadi-noweb-*.xbps
+          xbps-install -y hostdir/binpkgs/azadi-noweb-*.xbps
           azadi-noweb --version
           azadi-noweb --help
 
@@ -60,7 +67,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: void-glibc-package
-          path: /home/builder/packaging/build/void/glibc/*.xbps
+          path: void-packages/hostdir/binpkgs/azadi-noweb-*.xbps
 
   build-musl:
     runs-on: ubuntu-latest
@@ -71,14 +78,12 @@ jobs:
       - name: Update XBPS
         shell: sh
         run: |
-          # First sync and update xbps itself
           xbps-install -S
           xbps-install -yu xbps
 
       - name: Install basic dependencies
         shell: sh
         run: |
-          # Now update everything else
           xbps-install -Syu
           xbps-install -y bash git gcc gcompat
 
@@ -100,13 +105,22 @@ jobs:
         shell: bash
         run: |
           cd /home/builder/packaging/build/void/musl
-          ./build.sh
+          # Copy template to proper location
+          mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
+          cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
+          # Clone void-packages
+          git clone --depth 1 https://github.com/void-linux/void-packages
+          cd void-packages
+          # Set up environment
+          ./xbps-src binary-bootstrap
+          # Build package
+          ./xbps-src pkg azadi-noweb
 
       - name: Test package
         shell: bash
         run: |
-          xbps-rindex -a *.xbps
-          xbps-install -y *.xbps
+          xbps-rindex -a hostdir/binpkgs/azadi-noweb-*.xbps
+          xbps-install -y hostdir/binpkgs/azadi-noweb-*.xbps
           azadi-noweb --version
           azadi-noweb --help
 
@@ -114,4 +128,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: void-musl-package
-          path: /home/builder/packaging/build/void/musl/*.xbps
+          path: void-packages/hostdir/binpkgs/azadi-noweb-*.xbps
