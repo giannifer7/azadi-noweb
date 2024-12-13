@@ -28,6 +28,12 @@ jobs:
           name: package-files
           path: /home/builder/packaging/build
 
+      - name: Set up build directory
+        shell: bash
+        run: |
+          mkdir -p /home/builder/packaging/build/arch
+          chown -R builder:builder /home/builder/packaging
+
       - name: Install build dependencies
         shell: bash
         run: |
@@ -38,13 +44,15 @@ jobs:
         shell: bash
         run: |
           cd /home/builder/packaging/build/arch
-          sudo -u builder makepkg -si --noconfirm
+          ls -la  # Debug: show directory contents and permissions
+          sudo -u builder bash -c 'cd /home/builder/packaging/build/arch && makepkg -si --noconfirm'
         env:
           HOME: /home/builder
 
       - name: Test package
         shell: bash
         run: |
+          cd /home/builder/packaging/build/arch
           pacman -U --noconfirm *.pkg.tar.zst
           azadi-noweb --version
           azadi-noweb --help
