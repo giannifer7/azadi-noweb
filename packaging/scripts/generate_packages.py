@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Package generation script for multiple distributions."""
 
 import hashlib
 import re
@@ -54,6 +55,8 @@ def validate_distribution_config(config: Dict[str, Any]) -> None:
 
 @dataclass
 class PackageMetadata:
+    """Metadata for a package, extracted from Cargo.toml and configuration."""
+
     package_name: str
     version: str
     description: str
@@ -63,6 +66,11 @@ class PackageMetadata:
     repo_url: str
     sha256sum: Optional[str] = None
     sha512sum: Optional[str] = None
+
+    @property
+    def maintainer(self) -> str:
+        """Format maintainer information as 'name <email>'."""
+        return f"{self.maintainer_name} <{self.maintainer_email}>"
 
     @classmethod
     def from_cargo_toml(cls, path: Path, dist_config: Dict[str, Any]) -> "PackageMetadata":
@@ -114,6 +122,8 @@ class PackageMetadata:
 
 
 class PackageGenerator:
+    """Generate package files for multiple distributions."""
+
     def __init__(self, project_root: Path):
         self.project_root = project_root
         self.packaging_dir = project_root / "packaging"
@@ -176,13 +186,14 @@ class PackageGenerator:
         output_path = self.get_output_path(format_name, metadata)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Combine metadata with distribution-specific info
-        template_data = {
+        # Get dict representation of metadata with proper maintainer format
+        metadata_dict = {
             **metadata.__dict__,
+            "maintainer": metadata.maintainer,
             **metadata.get_distribution_info(format_name, self.config),
         }
 
-        content = template.render(template_data)
+        content = template.render(metadata_dict)
         output_path.write_text(content)
         print(f"Generated {output_path}")
 
@@ -206,7 +217,7 @@ class PackageGenerator:
 )
 @click.option("--clean", is_flag=True, help="Clean build directory before generating packages")
 def main(cargo_toml: str, compute_checksums: bool, formats: str, clean: bool) -> None:
-    """Generate package files for various distributions"""
+    """Generate package files for various distributions."""
     project_root = Path(cargo_toml).parent
 
     try:
