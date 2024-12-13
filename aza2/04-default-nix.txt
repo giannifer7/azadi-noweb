@@ -1,0 +1,47 @@
+Ah, I understand now. You need a default.nix to build the project when testing the Cachix setup. Here's what we need:
+
+<[@file default.nix]>=
+# default.nix
+{ pkgs ? import <nixpkgs> {} }:
+
+let
+  # Extract version from Cargo.toml
+  version = builtins.readFile (pkgs.runCommand "version" {}
+    ''
+      ${pkgs.rust}/bin/cargo metadata --manifest-path=${toString ./Cargo.toml} \
+        --format-version=1 \
+        --no-deps \
+        | ${pkgs.jq}/bin/jq -r '.packages[0].version' \
+        > $out
+    '');
+
+in pkgs.rustPlatform.buildRustPackage {
+  pname = "azadi-noweb";
+  inherit version;
+
+  src = ./.;
+
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
+
+  meta = with pkgs.lib; {
+    description = "A Rust implementation of noweb-style literate programming tool";
+    homepage = "https://github.com/giannifer7/azadi-noweb";
+    license = licenses.mit;
+    maintainers = with maintainers; [ giannifer7 ];
+    mainProgram = "azadi-noweb";
+  };
+}
+$$
+
+This default.nix:
+1. Uses the local source instead of fetching from GitHub (since we're testing locally)
+2. Extracts the version from Cargo.toml automatically
+3. Uses the local Cargo.lock file
+4. Includes all the necessary metadata
+
+This will work with Cachix's test workflow as it provides a standard Nix build target. Would you like me to:
+1. Add more build options or dependencies?
+2. Add development shell integration?
+3. Add cross-compilation support?
