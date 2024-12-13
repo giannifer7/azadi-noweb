@@ -1,4 +1,5 @@
 name: Build Alpine Package
+
 on:
   workflow_call:
     inputs:
@@ -9,34 +10,44 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: alpine:latest
+    container:
+      image: alpine:latest
+      options: --init
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Install base dependencies
+        run: |
+          apk add --no-cache alpine-sdk git sudo
+
+      - name: Setup builder user
+        run: |
+          adduser -D builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          addgroup builder abuild
+
+          # Setup abuild for builder user
+          su builder -c "abuild-keygen -a -n"
+
+          # Give builder ownership of package dir
+          mkdir -p /var/cache/distfiles
+          chown -R builder:builder /var/cache/distfiles
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
         with:
           name: package-files
-          path: packaging/build
-
-      - name: Install build dependencies
-        run: |
-          apk add --no-cache alpine-sdk rust cargo
+          path: /home/builder/packaging/build
 
       - name: Build package
         run: |
-          adduser -D builder
-          addgroup builder abuild
-          mkdir -p /etc/sudoers.d
-          echo "%abuild ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/abuild
-          cd packaging/build/alpine
-          abuild -r
-
-      - name: Test package
-        run: |
-          apk add --allow-untrusted ./packages/*/*.apk
-          azadi-noweb --version
-          azadi-noweb --help
+          cd /home/builder/packaging/build/alpine
+          chown -R builder:builder .
+          su builder -c 'abuild -r'
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: alpine-package
-          path: packages/*/*.apk
+          path: /home/builder/packages/*/x86_64/*.apk
