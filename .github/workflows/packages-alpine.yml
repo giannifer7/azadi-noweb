@@ -44,7 +44,11 @@ jobs:
         run: |
           cd /home/builder/packaging/build/alpine
           chown -R builder:builder .
-          su builder -c 'abuild -r'
+          # Generate checksums first, then build
+          su builder -c '
+            abuild checksum
+            abuild -r
+          '
 
       - name: Upload package
         uses: actions/upload-artifact@v4
