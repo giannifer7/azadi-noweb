@@ -1,4 +1,5 @@
-name: Build Void Packages
+name: Build Void Package
+
 on:
   workflow_call:
     inputs:
@@ -7,38 +8,81 @@ on:
         type: string
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        libc: [glibc, musl]
+  build-glibc:
     runs-on: ubuntu-latest
-    container:
-      image: voidlinux/voidlinux-${{ matrix.libc }}:latest
-      options: --privileged
+    container: ghcr.io/void-linux/void-linux:latest-full-x86_64
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
         with:
           name: package-files
-          path: packaging/build
+          path: /home/builder/packaging/build
 
       - name: Install build dependencies
+        shell: bash
         run: |
           xbps-install -Syu
-          xbps-install -y rust cargo git xtools
+          xbps-install -y base-devel git rust cargo
 
       - name: Build package
+        shell: bash
         run: |
-          cd packaging/build/void/${{ matrix.libc }}
-          ./xbps-src pkg azadi-noweb
+          cd /home/builder/packaging/build/void
+          ./build.sh
 
       - name: Test package
+        shell: bash
         run: |
-          xbps-install --repository=hostdir/binpkgs azadi-noweb
+          xbps-rindex -a *.xbps
+          xbps-install -y *.xbps
           azadi-noweb --version
           azadi-noweb --help
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: void-${{ matrix.libc }}-package
-          path: hostdir/binpkgs/*/*.xbps
+          name: void-glibc-package
+          path: /home/builder/packaging/build/void/*.xbps
+
+  build-musl:
+    runs-on: ubuntu-latest
+    container: ghcr.io/void-linux/void-linux:latest-full-x86_64-musl
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: /home/builder/packaging/build
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          xbps-install -Syu
+          xbps-install -y base-devel git rust cargo
+
+      - name: Build package
+        shell: bash
+        run: |
+          cd /home/builder/packaging/build/void
+          ./build.sh
+
+      - name: Test package
+        shell: bash
+        run: |
+          xbps-rindex -a *.xbps
+          xbps-install -y *.xbps
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-musl-package
+          path: /home/builder/packaging/build/void/*.xbps
+

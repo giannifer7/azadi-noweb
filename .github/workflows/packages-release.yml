@@ -42,5 +42,6 @@ jobs:
           files: |
             artifacts/alpine-package/*
             artifacts/arch-package/*
-            artifacts/void-*-package/*
+            artifacts/void-glibc-package/*
+            artifacts/void-musl-package/*
           generate_release_notes: true
