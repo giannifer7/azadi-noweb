@@ -14,11 +14,11 @@ jobs:
       image: ghcr.io/void-linux/void-linux:latest-full-x86_64
       options: --init
     steps:
-      - name: Install git and checkout dependencies
-        shell: bash
+      - name: Install basic dependencies
+        shell: sh
         run: |
           xbps-install -Syu
-          xbps-install -y git gcc libstdc++
+          xbps-install -y bash git gcc libstdc++
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,11 +60,11 @@ jobs:
       image: ghcr.io/void-linux/void-linux:latest-full-x86_64-musl
       options: --init
     steps:
-      - name: Install git and checkout dependencies
-        shell: bash
+      - name: Install basic dependencies
+        shell: sh
         run: |
           xbps-install -Syu
-          xbps-install -y git gcc gcompat
+          xbps-install -y bash git gcc gcompat
 
       - name: Checkout repository
         uses: actions/checkout@v4
