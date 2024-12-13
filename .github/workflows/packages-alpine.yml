@@ -24,6 +24,7 @@ jobs:
         run: |
           adduser -D builder
           addgroup builder abuild
+          mkdir -p /etc/sudoers.d
           echo "%abuild ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/abuild
           cd packaging/build/alpine
           abuild -r
