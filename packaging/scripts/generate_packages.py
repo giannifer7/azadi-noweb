@@ -106,7 +106,7 @@ class PackageMetadata:
             license=package["license"],
             maintainer_name=maintainer_name,
             maintainer_email=maintainer_email,
-            repo_url=package.get("repository", homepage),  # Fallback to homepage if no repository
+            repo_url=package.get("repository", homepage),
             homepage=homepage,
         )
 
@@ -197,6 +197,7 @@ class PackageGenerator:
         metadata_dict = {
             **metadata.__dict__,
             "maintainer": metadata.maintainer,
+            "checksum": metadata.sha256sum,  # Map sha256sum to checksum for templates
             **metadata.get_distribution_info(format_name, self.config),
         }
 
