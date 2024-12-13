@@ -14,12 +14,17 @@ jobs:
       image: ghcr.io/void-linux/void-linux:latest-full-x86_64
       options: --init
     steps:
+      - name: Update XBPS
+        shell: sh
+        run: |
+          # First sync and update xbps itself
+          xbps-install -S
+          xbps-install -yu xbps
+
       - name: Install basic dependencies
         shell: sh
         run: |
-          # Sync repos first
-          xbps-install -S
-          # Then update
+          # Now update everything else
           xbps-install -Syu
           xbps-install -y bash git gcc libstdc++
 
@@ -63,12 +68,17 @@ jobs:
       image: ghcr.io/void-linux/void-linux:latest-full-x86_64-musl
       options: --init
     steps:
+      - name: Update XBPS
+        shell: sh
+        run: |
+          # First sync and update xbps itself
+          xbps-install -S
+          xbps-install -yu xbps
+
       - name: Install basic dependencies
         shell: sh
         run: |
-          # Sync repos first
-          xbps-install -S
-          # Then update
+          # Now update everything else
           xbps-install -Syu
           xbps-install -y bash git gcc gcompat
 
