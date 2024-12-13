@@ -24,7 +24,7 @@ jobs:
         shell: sh
         run: |
           xbps-install -Syu
-          xbps-install -y bash git gcc libstdc++
+          xbps-install -y bash git gcc libstdc++ sudo
 
       - name: Set up builder user
         shell: sh
@@ -51,8 +51,8 @@ jobs:
         shell: bash
         run: |
           cd /home/builder/packaging/build/void/glibc
-          # Set up build environment
-          sudo -u builder bash -c '
+          # Set up build environment as builder user
+          su builder -c '
             mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
             cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
             git clone --depth 1 https://github.com/void-linux/void-packages
@@ -98,7 +98,7 @@ jobs:
               xbps-install -S
               xbps-install -yu xbps
               xbps-install -Syu
-              xbps-install -y bash git gcc gcompat base-devel rust cargo
+              xbps-install -y bash git gcc gcompat base-devel rust cargo sudo
 
               # Create builder user
               useradd -m builder
@@ -106,7 +106,7 @@ jobs:
               chown -R builder:builder /workspace
 
               # Build as builder user
-              sudo -u builder bash -c "
+              su builder -c "
                 cd /workspace/packaging/build/void/musl
                 mkdir -p /usr/src/void-packages/srcpkgs/azadi-noweb
                 cp template /usr/src/void-packages/srcpkgs/azadi-noweb/template
