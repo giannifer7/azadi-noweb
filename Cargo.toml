@@ -1,6 +1,6 @@
 [package]
 name = "azadi-noweb"
-version = "0.1.3"
+version = "0.1.5"
 edition = "2021"
 authors = ["Gianni Ferrarotti <gianni.ferrarotti@gmail.com>"]
 description = "A Rust implementation of noweb-style literate programming tool"
