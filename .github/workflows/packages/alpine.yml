@@ -1,0 +1,33 @@
+# .github/workflows/packages/alpine.yml
+name: Build Alpine Package
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-alpine:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache alpine-sdk rust cargo git
+
+      - name: Build Alpine package
+        run: |
+          adduser -D builder
+          addgroup builder abuild
+          echo "%abuild ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/abuild
+          cd packaging/alpine
+          abuild -F
+
+      - name: Upload Alpine Package
+        uses: softprops/action-gh-release@v1
+        with:
+          files: /home/builder/packages/*/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,47 @@
+# .github/workflows/packages/void.yml
+name: Build Void Packages
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-void:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        libc: [glibc, musl]
+    container:
+      image: voidlinux/voidlinux-${{ matrix.libc }}:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          xbps-install -Syu
+          xbps-install -y rust cargo git xtools
+
+      - name: Clone void-packages
+        run: |
+          git clone https://github.com/void-linux/void-packages.git
+          cd void-packages
+          ./xbps-src binary-bootstrap
+
+      - name: Create package template
+        run: |
+          mkdir -p void-packages/srcpkgs/azadi-noweb
+          cp packaging/void/template void-packages/srcpkgs/azadi-noweb/
+          VERSION=${GITHUB_REF#refs/tags/v}
+          sed -i "s/\${VERSION}/$VERSION/g" void-packages/srcpkgs/azadi-noweb/template
+
+      - name: Build package
+        run: |
+          cd void-packages
+          ./xbps-src pkg azadi-noweb
+
+      - name: Upload package
+        uses: softprops/action-gh-release@v1
+        with:
+          files: void-packages/hostdir/binpkgs/*/*.xbps
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

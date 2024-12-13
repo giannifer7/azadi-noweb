@@ -1,0 +1,26 @@
+# .github/workflows/packages/nix.yml
+name: Build Nix Package
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v22
+
+      - name: Build Nix package
+        run: |
+          nix-build packaging/nix/default.nix
+
+      - name: Upload Nix package
+        uses: softprops/action-gh-release@v1
+        with:
+          files: result
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

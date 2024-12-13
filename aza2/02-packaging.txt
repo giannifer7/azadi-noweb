@@ -1,0 +1,128 @@
+Perfect! Let's create the packaging templates using Jinja2 syntax. We'll use variables like `{{ github_user }}`, `{{ package_name }}`, `{{ version }}`, `{{ sha512sum }}` etc.
+
+<[@file packaging/alpine/APKBUILD.in]>=
+# Contributor: {{ maintainer_name }} <{{ maintainer_email }}>
+# Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
+pkgname={{ package_name }}
+pkgver={{ version }}
+pkgrel=0
+pkgdesc="{{ description }}"
+url="{{ repo_url }}"
+arch="x86_64 aarch64"
+license="{{ license }}"
+makedepends="cargo"
+source="$pkgname-$pkgver.tar.gz::{{ repo_url }}/archive/v$pkgver.tar.gz"
+sha512sums="{{ sha512sum }}"
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --release
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 target/release/$pkgname "$pkgdir"/usr/bin/$pkgname
+    install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+    install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+}
+$$
+
+<[@file packaging/arch/PKGBUILD.in]>=
+pkgname={{ package_name }}
+pkgver={{ version }}
+pkgrel=1
+pkgdesc="{{ description }}"
+arch=('x86_64' 'aarch64')
+url="{{ repo_url }}"
+license=('{{ license }}')
+depends=('gcc-libs')
+makedepends=('rust' 'cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha512sums=('{{ sha512sum }}')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --release
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+$$
+
+<[@file packaging/nix/default.nix.in]>=
+{ lib
+, stdenv
+, rustPlatform
+, fetchFromGitHub
+}:
+
+rustPlatform.buildRustPackage rec {
+  pname = "{{ package_name }}";
+  version = "{{ version }}";
+
+  src = fetchFromGitHub {
+    owner = "{{ github_user }}";
+    repo = "{{ package_name }}";
+    rev = "v${version}";
+    sha256 = "{{ sha256sum }}";  # For Nix we typically use sha256
+  };
+
+  cargoLock = {
+    lockFile = ../Cargo.lock;
+  };
+
+  meta = with lib; {
+    description = "{{ description }}";
+    homepage = "{{ repo_url }}";
+    license = licenses.{{ license|lower }};
+    maintainers = with maintainers; [ {{ github_user }} ];
+    mainProgram = "{{ package_name }}";
+  };
+}
+$$
+
+<[@file packaging/void/template.in]>=
+# Template file for '{{ package_name }}'
+pkgname={{ package_name }}
+version={{ version }}
+revision=1
+build_style=cargo
+short_desc="{{ description }}"
+maintainer="{{ maintainer_name }} <{{ maintainer_email }}>"
+license="{{ license }}"
+homepage="{{ repo_url }}"
+distfiles="${homepage}/archive/v${version}.tar.gz"
+sha512sum="{{ sha512sum }}"
+
+do_install() {
+    vbin target/release/$pkgname
+    vlicense LICENSE
+    vdoc README.md
+}
+$$
+
+These templates should be processed with a context similar to:
+```python
+context = {
+    'package_name': 'azadi-noweb',
+    'version': '0.1.2',
+    'description': 'A Rust implementation of noweb-style literate programming tool',
+    'license': 'MIT',
+    'github_user': 'giannifer7',
+    'maintainer_name': 'Gianni Ferrarotti',
+    'maintainer_email': 'gianni.ferrarotti@gmail.com',
+    'repo_url': 'https://github.com/giannifer7/azadi-noweb',
+    'sha512sum': 'SKIP',  # or actual checksum
+    'sha256sum': '',  # for Nix
+}
+```
+
+Would you like me to:
+1. Add more variables to the templates?
+2. Add a sample Jinja2 script structure?
+3. Add validation for the parameters?
+4. Add more package formats or configuration options?

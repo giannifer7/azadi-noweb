@@ -1,0 +1,31 @@
+# .github/workflows/packages/deb-rpm.yml
+name: Build DEB and RPM Packages
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build RPM package
+        run: |
+          cargo install cargo-rpm
+          cargo rpm build
+
+      - name: Build DEB package
+        run: |
+          cargo install cargo-deb
+          cargo deb
+
+      - name: Upload packages
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/*.rpm
+            target/debian/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

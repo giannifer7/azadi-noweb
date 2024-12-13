@@ -1,0 +1,210 @@
+I'll create a script to handle the template processing with validation.
+
+<[@file packaging/scripts/generate_packages.py]>=
+#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+import hashlib
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+import toml
+import click
+import requests
+
+@dataclass
+class PackageInfo:
+    package_name: str
+    version: str
+    description: str
+    license: str
+    github_user: str
+    maintainer_name: str
+    maintainer_email: str
+    repo_url: str
+    sha512sum: Optional[str] = None
+    sha256sum: Optional[str] = None
+
+    def validate(self) -> None:
+        """Validate package information."""
+        if not all([self.package_name, self.version, self.description,
+                   self.license, self.github_user, self.maintainer_name,
+                   self.maintainer_email, self.repo_url]):
+            raise ValueError("All required fields must be non-empty")
+
+        # Validate version format
+        if not self.version.replace('.', '').isdigit():
+            raise ValueError(f"Invalid version format: {self.version}")
+
+        # Validate email format (basic check)
+        if '@' not in self.maintainer_email or '.' not in self.maintainer_email:
+            raise ValueError(f"Invalid email format: {self.maintainer_email}")
+
+        # Validate GitHub URL format
+        if not self.repo_url.startswith('https://github.com/'):
+            raise ValueError(f"Invalid GitHub URL: {self.repo_url}")
+$$
+
+Now let's add the functions to compute checksums and generate package files:
+
+<[@file packaging/scripts/generate_packages.py]>=
+def compute_checksums(package_info: PackageInfo) -> PackageInfo:
+    """Compute SHA512 and SHA256 checksums for the source tarball."""
+    tarball_url = f"{package_info.repo_url}/archive/v{package_info.version}.tar.gz"
+    try:
+        response = requests.get(tarball_url, stream=True)
+        response.raise_for_status()
+
+        sha512 = hashlib.sha512()
+        sha256 = hashlib.sha256()
+
+        for chunk in response.iter_content(chunk_size=8192):
+            sha512.update(chunk)
+            sha256.update(chunk)
+
+        package_info.sha512sum = sha512.hexdigest()
+        package_info.sha256sum = sha256.hexdigest()
+        return package_info
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to download source: {e}")
+
+def load_cargo_toml() -> Dict[str, Any]:
+    """Load information from Cargo.toml."""
+    try:
+        with open('Cargo.toml', 'r') as f:
+            return toml.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError("Cargo.toml not found in current directory")
+    except toml.TomlDecodeError as e:
+        raise ValueError(f"Invalid Cargo.toml: {e}")
+
+def create_package_info() -> PackageInfo:
+    """Create PackageInfo from Cargo.toml and environment variables."""
+    cargo_data = load_cargo_toml()
+    package_data = cargo_data.get('package', {})
+
+    github_user = os.environ.get('GITHUB_USER', 'giannifer7')
+
+    info = PackageInfo(
+        package_name=package_data.get('name', ''),
+        version=package_data.get('version', ''),
+        description=package_data.get('description', ''),
+        license=package_data.get('license', ''),
+        github_user=github_user,
+        maintainer_name=package_data.get('authors', [''])[0].split('<')[0].strip(),
+        maintainer_email=package_data.get('authors', [''])[0].split('<')[1].rstrip('>'),
+        repo_url=f"https://github.com/{github_user}/{package_data.get('name', '')}"
+    )
+
+    info.validate()
+    return info
+$$
+
+Finally, let's add the main execution code:
+
+<[@file packaging/scripts/generate_packages.py]>=
+def setup_jinja_env() -> Environment:
+    """Set up the Jinja2 environment."""
+    packaging_dir = Path(__file__).parent.parent
+    env = Environment(
+        loader=FileSystemLoader(packaging_dir),
+        undefined=StrictUndefined,
+        trim_blocks=True,
+        lstrip_blocks=True
+    )
+    return env
+
+def generate_package_files(package_info: PackageInfo, skip_checksums: bool = False) -> None:
+    """Generate all package files from templates."""
+    if not skip_checksums:
+        package_info = compute_checksums(package_info)
+
+    env = setup_jinja_env()
+
+    # Templates to process
+    templates = {
+        'alpine/APKBUILD.in': 'alpine/APKBUILD',
+        'arch/PKGBUILD.in': 'arch/PKGBUILD',
+        'nix/default.nix.in': 'nix/default.nix',
+        'void/template.in': 'void/template'
+    }
+
+    context = package_info.__dict__
+
+    for template_path, output_path in templates.items():
+        try:
+            template = env.get_template(template_path)
+            rendered = template.render(**context)
+
+            # Ensure output directory exists
+            output_dir = Path(output_path).parent
+            os.makedirs(output_dir, exist_ok=True)
+
+            with open(output_path, 'w') as f:
+                f.write(rendered)
+
+            print(f"Generated {output_path}")
+
+        except Exception as e:
+            print(f"Error processing {template_path}: {e}", file=sys.stderr)
+
+@click.command()
+@click.option('--skip-checksums', is_flag=True, help='Skip checksum calculation')
+@click.option('--github-user', help='Override GitHub username')
+@click.option('--maintainer-name', help='Override maintainer name')
+@click.option('--maintainer-email', help='Override maintainer email')
+def main(skip_checksums: bool, github_user: Optional[str],
+         maintainer_name: Optional[str], maintainer_email: Optional[str]) -> None:
+    """Generate package files for various distributions."""
+    try:
+        package_info = create_package_info()
+
+        # Override values if provided
+        if github_user:
+            package_info.github_user = github_user
+        if maintainer_name:
+            package_info.maintainer_name = maintainer_name
+        if maintainer_email:
+            package_info.maintainer_email = maintainer_email
+
+        package_info.validate()
+        generate_package_files(package_info, skip_checksums)
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+$$
+
+This script:
+1. Uses dataclasses for type safety and validation
+2. Loads package information from Cargo.toml
+3. Computes checksums from the source tarball
+4. Validates all required fields
+5. Provides CLI options for overriding values
+6. Uses Jinja2's StrictUndefined to catch undefined variables
+7. Processes all package templates with proper error handling
+
+To use it:
+```bash
+# Install dependencies
+pip install click jinja2 toml requests
+
+# Basic usage
+./packaging/scripts/generate_packages.py
+
+# Skip checksum calculation
+./packaging/scripts/generate_packages.py --skip-checksums
+
+# Override values
+./packaging/scripts/generate_packages.py --github-user=giannifer7 --maintainer-email="new@email.com"
+```
+
+Would you like me to:
+1. Add more validation rules?
+2. Add configuration file support?
+3. Add more template variables?
+4. Add testing infrastructure?

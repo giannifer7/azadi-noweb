@@ -1,1 +1,8 @@
 /target
+
+.venv
+.env
+
+hist-search.txt
+.hist.txt
+_azadi_work/

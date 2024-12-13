@@ -1,0 +1,31 @@
+# .github/workflows/packages/arch.yml
+name: Build Arch Package
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-arch:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm git rust cargo
+
+      - name: Build Arch package
+        run: |
+          cd packaging/arch
+          makepkg -sf --noconfirm
+
+      - name: Upload Arch Package
+        uses: softprops/action-gh-release@v1
+        with:
+          files: packaging/arch/*.pkg.tar.zst
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

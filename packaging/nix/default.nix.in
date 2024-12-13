@@ -1,0 +1,29 @@
+{ lib
+, stdenv
+, rustPlatform
+, fetchFromGitHub
+}:
+
+rustPlatform.buildRustPackage rec {
+  pname = "{{ package_name }}";
+  version = "{{ version }}";
+
+  src = fetchFromGitHub {
+    owner = "{{ github_user }}";
+    repo = "{{ package_name }}";
+    rev = "v${version}";
+    sha256 = "{{ sha256sum }}";  # For Nix we typically use sha256
+  };
+
+  cargoLock = {
+    lockFile = ../Cargo.lock;
+  };
+
+  meta = with lib; {
+    description = "{{ description }}";
+    homepage = "{{ repo_url }}";
+    license = licenses.{{ license|lower }};
+    maintainers = with maintainers; [ {{ github_user }} ];
+    mainProgram = "{{ package_name }}";
+  };
+}

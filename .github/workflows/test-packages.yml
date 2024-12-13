@@ -1,0 +1,61 @@
+# .github/workflows/test-packages.yml
+name: Test Packages
+on:
+  workflow_run:
+    workflows:
+      - "Build and Release"
+      - "Build DEB and RPM Packages"
+      - "Build Alpine Package"
+      - "Build Arch Package"
+      - "Build Void Packages"
+      - "Build Nix Package"
+    types:
+      - completed
+
+jobs:
+  test-packages:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      matrix:
+        container:
+          - {name: 'ubuntu:latest', type: 'deb'}
+          - {name: 'fedora:latest', type: 'rpm'}
+          - {name: 'archlinux:latest', type: 'pkg.tar.zst'}
+          - {name: 'alpine:latest', type: 'apk'}
+          - {name: 'voidlinux/voidlinux:latest', type: 'xbps'}
+          - {name: 'voidlinux/voidlinux-musl:latest', type: 'xbps'}
+    container:
+      image: ${{ matrix.container.name }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: packages
+          path: packages
+
+      - name: Test package installation
+        run: |
+          case "${{ matrix.container.type }}" in
+            deb)
+              apt-get update && apt-get install -y ./packages/*.deb
+              ;;
+            rpm)
+              dnf install -y ./packages/*.rpm
+              ;;
+            pkg.tar.zst)
+              pacman -U --noconfirm ./packages/*.pkg.tar.zst
+              ;;
+            apk)
+              apk add --allow-untrusted ./packages/*.apk
+              ;;
+            xbps)
+              xbps-install -y --repository=packages
+              xbps-install -y azadi-noweb
+              ;;
+          esac
+
+      - name: Test binary execution
+        run: |
+          azadi-noweb --version
+          azadi-noweb --help
