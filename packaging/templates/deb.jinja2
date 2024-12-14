@@ -1,12 +1,13 @@
-Package: {{ package_name }}
-Version: {{ version }}
+# packaging/templates/deb.jinja2
+Package: {{ metadata.package_name }}
+Version: {{ metadata.version }}
 Section: utils
 Priority: optional
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
-Description: {{ description }}
- {{ description }}
+Depends: ${shlibs:Depends}, ${misc:Depends}{% for dep in config.dependencies.deb %}, {{ dep }}{% endfor %}
+Maintainer: {{ metadata.maintainer }}
+Description: {{ metadata.description }}
+ {{ metadata.description }}
  .
  This package provides a command-line tool for literate programming,
  allowing developers to write code and documentation in a single source file.

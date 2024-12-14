@@ -1,0 +1,88 @@
+# Package templates for different distributions
+
+<[@file packaging/templates/arch.jinja2]>=
+# packaging/templates/arch.jinja2
+# Maintainer: {{ metadata.maintainer }}
+pkgname={{ metadata.package_name }}
+pkgver={{ metadata.version }}
+pkgrel=1
+pkgdesc="{{ metadata.description }}"
+arch=({% for arch in config.arch %}'{{ arch }}'{% if not loop.last %} {% endif %}{% endfor %})
+url="{{ metadata.repo_url }}"
+license=('{{ metadata.license }}')
+depends=({% for dep in config.dependencies.arch %}'{{ dep }}'{% if not loop.last %} {% endif %}{% endfor %})
+makedepends=('rust' 'cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha512sums=('{{ metadata.sha512sum }}')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --release
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+$$
+
+<[@file packaging/templates/void.jinja2]>=
+# packaging/templates/void.jinja2
+# Template file for '{{ metadata.package_name }}'
+pkgname={{ metadata.package_name }}
+version={{ metadata.version }}
+revision=1
+build_style=cargo
+short_desc="{{ metadata.description }}"
+maintainer="{{ metadata.maintainer }}"
+license="{{ metadata.license }}"
+homepage="{{ metadata.homepage }}"
+distfiles="${homepage}/archive/v${version}.tar.gz"
+checksum="{{ metadata.sha256sum }}"
+
+post_install() {
+    vlicense LICENSE
+}
+$$
+
+<[@file packaging/templates/deb.jinja2]>=
+# packaging/templates/deb.jinja2
+Package: {{ metadata.package_name }}
+Version: {{ metadata.version }}
+Section: utils
+Priority: optional
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}{% for dep in config.dependencies.deb %}, {{ dep }}{% endfor %}
+Maintainer: {{ metadata.maintainer }}
+Description: {{ metadata.description }}
+ {{ metadata.description }}
+ .
+ This package provides a command-line tool for literate programming,
+ allowing developers to write code and documentation in a single source file.
+$$
+
+<[@file packaging/templates/cargo.deb.toml.jinja2]>=
+# packaging/templates/cargo.deb.toml.jinja2
+[package.metadata.deb]
+maintainer = "{{ metadata.maintainer }}"
+copyright = "2024, {{ metadata.maintainer }}"
+license-file = ["LICENSE", "4"]
+extended-description = """
+{{ metadata.description }}
+"""
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/{{ metadata.package_name }}", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/{{ metadata.package_name }}/README.md", "644"],
+    ["LICENSE", "usr/share/doc/{{ metadata.package_name }}/", "644"]
+]
+$$
+
+Would you like to see:
+1. The Docker setup next for building in clean environments?
+2. The GitHub Actions workflows that use all of this?
+3. Some tests to ensure everything works correctly?

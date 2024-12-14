@@ -1,44 +1,54 @@
 # packaging/scripts/docker/docker-compose.yml
 version: '3.8'
 
+x-common-volumes: &common-volumes
+  volumes:
+    - ../../..:/build
+    - cargo-cache:/usr/local/cargo/registry
+    - package-cache:/build/packaging/build
+
+x-common-environment: &common-environment
+  environment:
+    - CARGO_HOME=/usr/local/cargo
+    - RUSTC_WRAPPER=sccache
+
 services:
-  void-glibc:
-    extends:
-      file: docker-compose.yml
-      service: void-glibc
-
-  void-musl:
-    extends:
-      file: docker-compose.yml
-      service: void-musl
-
   debian-build:
     build:
-      context: ../..
+      context: ../../..
       dockerfile: packaging/scripts/docker/Builders.dockerfile
       target: debian-builder
-    volumes:
-      - ../../..:/build
-      - debian-cargo:/usr/local/cargo/registry
-    environment:
-      - CARGO_HOME=/usr/local/cargo
-      - RUSTC_WRAPPER=sccache
+    <<: *common-volumes
+    <<: *common-environment
 
-  nix-build:
+  void-glibc:
     build:
-      context: ../..
+      context: ../../..
       dockerfile: packaging/scripts/docker/Builders.dockerfile
-      target: nix-builder
+      target: void-glibc-builder
     volumes:
       - ../../..:/build
-      - nix-store:/nix
-    environment:
-      - NIX_PATH=nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz
+      - void-glibc-cargo:/root/.cargo
+      - void-glibc-cache:/var/cache/xbps
+    working_dir: /build/packaging/build/void/glibc
+    init: true
+
+  void-musl:
+    build:
+      context: ../../..
+      dockerfile: packaging/scripts/docker/Builders.dockerfile
+      target: void-musl-builder
+    volumes:
+      - ../../..:/build
+      - void-musl-cargo:/root/.cargo
+      - void-musl-cache:/var/cache/xbps
+    working_dir: /build/packaging/build/void/musl
+    init: true
 
 volumes:
+  cargo-cache:
   void-glibc-cargo:
   void-glibc-cache:
   void-musl-cargo:
   void-musl-cache:
-  debian-cargo:
-  nix-store:
+  package-cache:

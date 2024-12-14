@@ -1,0 +1,27 @@
+# .github/workflows/packages-release.yml additions
+  debian:
+    needs: generate
+    uses: ./.github/workflows/packages-debian.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  release:
+    needs: [generate, alpine, arch, void, debian]  # Added debian to needs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/alpine-package/*
+            artifacts/arch-package/*
+            artifacts/void-glibc-package/*
+            artifacts/void-musl-package/*
+            artifacts/debian-package/*  # Added debian packages
+          generate_release_notes: true

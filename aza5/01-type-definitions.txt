@@ -1,0 +1,91 @@
+# Type definitions for the package generation system
+
+<[config_type_definitions]>=
+from typing import TypedDict, NotRequired
+
+class DistributionDependencies(TypedDict):
+    alpine: list[str]
+    arch: list[str]
+    void_glibc: list[str]
+    void_musl: list[str]
+    deb: list[str]
+    rpm: list[str]
+
+class LibcVariants(TypedDict):
+    void_glibc: str
+    void_musl: str
+
+class DistributionsConfig(TypedDict):
+    arch: list[str]
+    dependencies: DistributionDependencies
+    libc: LibcVariants
+
+class BuildConfig(TypedDict):
+    output_dir: str
+
+class PackageConfig(TypedDict):
+    build: BuildConfig
+    distributions: DistributionsConfig
+$$
+
+<[cargo_metadata_types]>=
+class CargoPackage(TypedDict):
+    name: str
+    version: str
+    description: str
+    license: str
+    authors: list[str]
+    repository: NotRequired[str]
+    homepage: NotRequired[str]
+
+class CargoToml(TypedDict):
+    package: CargoPackage
+$$
+
+<[distribution_metadata_class]>=
+@dataclass
+class PackageMetadata:
+    """Metadata for a package, extracted from Cargo.toml and configuration."""
+    package_name: str
+    version: str
+    description: str
+    license: str
+    maintainer_name: str
+    maintainer_email: str
+    repo_url: str
+    homepage: str
+    sha256sum: str | None = None
+    sha512sum: str | None = None
+
+    @property
+    def maintainer(self) -> str:
+        """Format maintainer information as 'name <email>'."""
+        return f"{self.maintainer_name} <{self.maintainer_email}>"
+
+    @classmethod
+    def from_cargo_toml(cls, path: Path, dist_config: PackageConfig) -> PackageMetadata:
+        """Create metadata from Cargo.toml and distribution config."""
+        with open(path, "rb") as f:
+            cargo_data: CargoToml = tomllib.load(f)
+        package = cargo_data.get("package", {})
+
+        if not package:
+            raise ValueError("No [package] section found in Cargo.toml")
+
+        authors = package.get("authors", [])
+        if not authors:
+            raise ValueError("No authors found in Cargo.toml")
+
+        maintainer_name, maintainer_email = parse_author(authors[0])
+
+        return cls(
+            package_name=package["name"],
+            version=package["version"],
+            description=package["description"],
+            license=package["license"],
+            maintainer_name=maintainer_name,
+            maintainer_email=maintainer_email,
+            repo_url=package.get("repository", ""),
+            homepage=package.get("homepage", package.get("repository", "")),
+        )
+$$

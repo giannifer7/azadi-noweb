@@ -1,15 +1,16 @@
-# Template file for '{{ package_name }}'
-pkgname={{ package_name }}
-version={{ version }}
+# packaging/templates/void.jinja2
+# Template file for '{{ metadata.package_name }}'
+pkgname={{ metadata.package_name }}
+version={{ metadata.version }}
 revision=1
 build_style=cargo
-short_desc="{{ description }}"
-maintainer="{{ maintainer }}"
-license="{{ license }}"
-homepage="{{ homepage }}"
+short_desc="{{ metadata.description }}"
+maintainer="{{ metadata.maintainer }}"
+license="{{ metadata.license }}"
+homepage="{{ metadata.homepage }}"
 distfiles="${homepage}/archive/v${version}.tar.gz"
-checksum="{{ checksum }}"  {# SHA256 checksum of the release tarball #}
+checksum="{{ metadata.sha256sum }}"
 
 post_install() {
-	vlicense LICENSE
+    vlicense LICENSE
 }

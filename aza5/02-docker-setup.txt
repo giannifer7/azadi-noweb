@@ -1,0 +1,97 @@
+# Docker configurations for build environments
+
+<[docker_base_setup]>=
+# Base builder with minimal tools
+FROM rust:1.75-slim as base
+WORKDIR /build
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    python3-pip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+$$
+
+<[docker_debian_setup]>=
+# Debian builder
+FROM base as debian-builder
+RUN cargo install cargo-deb
+COPY packaging/scripts/pyproject.toml packaging/scripts/requirements.txt ./
+RUN pip3 install -r requirements.txt
+CMD ["python3", "packaging/scripts/generate_packages.py", "--formats=deb"]
+$$
+
+<[docker_nix_setup]>=
+# Nix builder
+FROM nixos/nix:latest as nix-builder
+WORKDIR /build
+# Install Python for our generator
+RUN nix-env -iA nixpkgs.python3 nixpkgs.python3Packages.pip
+COPY packaging/scripts/pyproject.toml packaging/scripts/requirements.txt ./
+RUN pip3 install -r requirements.txt
+CMD ["python3", "packaging/scripts/generate_packages.py", "--formats=nix"]
+$$
+
+<[@file packaging/scripts/docker/Builders.dockerfile]>=
+# packaging/scripts/docker/Builders.dockerfile
+
+<[docker_base_setup]>
+
+<[docker_debian_setup]>
+
+<[docker_nix_setup]>
+$$
+
+<[docker_volumes]>=
+volumes:
+  void-glibc-cargo:
+  void-glibc-cache:
+  void-musl-cargo:
+  void-musl-cache:
+  debian-cargo:
+  nix-store:
+$$
+
+<[docker_compose_services]>=
+services:
+  void-glibc:
+    extends:
+      file: docker-compose.yml
+      service: void-glibc
+
+  void-musl:
+    extends:
+      file: docker-compose.yml
+      service: void-musl
+
+  debian-build:
+    build:
+      context: ../..
+      dockerfile: packaging/scripts/docker/Builders.dockerfile
+      target: debian-builder
+    volumes:
+      - ../../..:/build
+      - debian-cargo:/usr/local/cargo/registry
+    environment:
+      - CARGO_HOME=/usr/local/cargo
+
+  nix-build:
+    build:
+      context: ../..
+      dockerfile: packaging/scripts/docker/Builders.dockerfile
+      target: nix-builder
+    volumes:
+      - ../../..:/build
+      - nix-store:/nix
+    environment:
+      - NIX_PATH=nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz
+$$
+
+<[@file packaging/scripts/docker/docker-compose.yml]>=
+# packaging/scripts/docker/docker-compose.yml
+version: '3.8'
+
+<[docker_compose_services]>
+
+<[docker_volumes]>
+$$

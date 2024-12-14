@@ -1,0 +1,156 @@
+# GitHub Actions workflows
+
+<[@file .github/workflows/packages-release.yml]>=
+# .github/workflows/packages-release.yml
+name: Build and Release Packages
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          
+      - name: Generate package files
+        run: python3 packaging/scripts/generator.py
+        
+      - name: Upload package files
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+  void-glibc:
+    needs: generate
+    uses: ./.github/workflows/packages-void.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+      variant: glibc
+
+  void-musl:
+    needs: generate
+    uses: ./.github/workflows/packages-void.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+      variant: musl
+
+  debian:
+    needs: generate
+    uses: ./.github/workflows/packages-debian.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  release:
+    needs: [generate, void-glibc, void-musl, debian]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/void-glibc-package/*
+            artifacts/void-musl-package/*
+            artifacts/debian-package/*
+          generate_release_notes: true
+$$
+
+<[@file .github/workflows/packages-debian.yml]>=
+# .github/workflows/packages-debian.yml
+name: Build Debian Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build package
+        run: |
+          docker-compose -f packaging/scripts/docker/docker-compose.yml \
+            run --rm debian-build
+
+      - name: Test package
+        run: |
+          sudo dpkg -i packaging/build/deb/*.deb
+          azadi-noweb --version
+          azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-package
+          path: packaging/build/deb/*.deb
+$$
+
+<[@file .github/workflows/packages-void.yml]>=
+# .github/workflows/packages-void.yml
+name: Build Void Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      variant:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build package
+        run: |
+          docker-compose -f packaging/scripts/docker/docker-compose.yml \
+            run --rm void-${{ inputs.variant }}
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-${{ inputs.variant }}-package
+          path: /usr/src/void-packages/hostdir/binpkgs/*.xbps
+$$

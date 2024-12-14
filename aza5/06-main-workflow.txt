@@ -1,3 +1,6 @@
+# Main workflow coordinating all builds
+
+<[@file .github/workflows/packages-release.yml]>=
 # .github/workflows/packages-release.yml
 name: Build and Release Packages
 on:
@@ -8,8 +11,6 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       
@@ -19,7 +20,7 @@ jobs:
           python-version: '3.12'
           
       - name: Generate package files
-        run: python3 packaging/scripts/generator.py
+        run: python3 packaging/scripts/generate_packages.py
         
       - name: Upload package files
         uses: actions/upload-artifact@v4
@@ -65,3 +66,4 @@ jobs:
             artifacts/void-musl-package/*
             artifacts/debian-package/*
           generate_release_notes: true
+$$

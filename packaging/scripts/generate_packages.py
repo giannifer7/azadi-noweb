@@ -1,205 +1,203 @@
 # packaging/scripts/generate_packages.py
 """Package generation script for multiple distributions."""
 
+from __future__ import annotations
+
 import hashlib
 import re
 import shutil
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
-from urllib.parse import urljoin
 
-import click
+import argparse
 import jinja2
 import requests
 
-def parse_author(author_str: str) -> Tuple[str, str]:
+from typing import TypedDict, NotRequired
+
+class DistributionDependencies(TypedDict):
+    alpine: list[str]
+    arch: list[str]
+    void_glibc: list[str]
+    void_musl: list[str]
+    deb: list[str]
+    rpm: list[str]
+
+class LibcVariants(TypedDict):
+    void_glibc: str
+    void_musl: str
+
+class DistributionsConfig(TypedDict):
+    arch: list[str]
+    dependencies: DistributionDependencies
+    libc: LibcVariants
+
+class BuildConfig(TypedDict):
+    output_dir: str
+
+class PackageConfig(TypedDict):
+    build: BuildConfig
+    distributions: DistributionsConfig
+
+class CargoPackage(TypedDict):
+    name: str
+    version: str
+    description: str
+    license: str
+    authors: list[str]
+    repository: NotRequired[str]
+    homepage: NotRequired[str]
+
+class CargoToml(TypedDict):
+    package: CargoPackage
+
+def parse_author(author_str: str) -> tuple[str, str]:
     """Parse author string into (name, email)."""
     match = re.match(r"(.*?)\s*<(.+?)>", author_str)
     if not match:
         raise ValueError(f"Invalid author format: {author_str}")
     return match.group(1).strip(), match.group(2).strip()
 
-def generate_cargo_deb_config(self, metadata: PackageMetadata) -> None:
-    """Generate Cargo.deb.toml configuration."""
-    if "deb" not in self.config["distributions"]["dependencies"]:
-        return
+def compute_checksums(url: str) -> tuple[str, str]:
+    """Compute SHA256 and SHA512 checksums for a file."""
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
 
-    template = self.env.get_template("cargo.deb.toml.jinja2")
-    output_path = self.build_dir / "deb" / "Cargo.deb.toml"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    content = template.render(metadata.__dict__)
-    output_path.write_text(content)
-    print(f"Generated {output_path}")
+    sha256 = hashlib.sha256()
+    sha512 = hashlib.sha512()
 
-    def generate_format(self, format_name: str, metadata: PackageMetadata) -> None:
-        """Generate a specific package format."""
-        # First generate any format-specific cargo configurations
-        if format_name == "deb":
-            self.generate_cargo_deb_config(metadata)
-        
-        # Use base format name for template
-        base_format = format_name.split("-")[0]
-        template = self.env.get_template(f"{base_format}.jinja2")
-        
-        output_path = self.get_output_path(format_name, metadata)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        metadata_dict = {
-            **metadata.__dict__,
-            "maintainer": metadata.maintainer,
-            "checksum": metadata.sha256sum,
-            **self.get_distribution_info(format_name, self.config),
-        }
-        
-        content = template.render(metadata_dict)
-        output_path.write_text(content)
-        print(f"Generated {output_path}")
+    for chunk in response.iter_content(chunk_size=8192):
+        sha256.update(chunk)
+        sha512.update(chunk)
 
-def main():
-    parser = argparse.ArgumentParser(description="Build packages for multiple distributions")
-    parser.add_argument(
-        "--distributions",
-        default="all",
-        help="Comma-separated list of distributions to build for"
-    )
-    
-    args = parser.parse_args()
-    project_root = Path(__file__).parent.parent.parent
-    
-    builder = PackageBuilder(project_root)
-    
-    if args.distributions == "all":
-        distributions = builder.get_supported_distributions()
-    else:
-        distributions = set(args.distributions.split(","))
-        unsupported = distributions - builder.get_supported_distributions()
-        if unsupported:
-            print(f"Warning: Unsupported distributions: {', '.join(unsupported)}")
-            distributions -= unsupported
-    
-    for dist in sorted(distributions):
-        print(f"\nBuilding package for {dist}...")
-        try:
-            builder.build_package(dist)
-        except Exception as e:
-            print(f"Error building package for {dist}: {e}")
-            continue
+    return sha256.hexdigest(), sha512.hexdigest()
 
-if __name__ == "__main__":
-    main()
-# packaging/scripts/generate_packages.py
-"""Package generation script for multiple distributions."""
+@dataclass
+class PackageMetadata:
+    """Metadata for a package, extracted from Cargo.toml and configuration."""
+    package_name: str
+    version: str
+    description: str
+    license: str
+    maintainer_name: str
+    maintainer_email: str
+    repo_url: str
+    homepage: str
+    sha256sum: str | None = None
+    sha512sum: str | None = None
 
-import argparse
-import hashlib
-import re
-import shutil
-import tomllib
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+    @property
+    def maintainer(self) -> str:
+        """Format maintainer information as 'name <email>'."""
+        return f"{self.maintainer_name} <{self.maintainer_email}>"
 
-import jinja2
+    @classmethod
+    def from_cargo_toml(cls, path: Path, dist_config: PackageConfig) -> PackageMetadata:
+        """Create metadata from Cargo.toml and distribution config."""
+        with open(path, "rb") as f:
+            cargo_data: CargoToml = tomllib.load(f)
+        package = cargo_data.get("package", {})
 
-class PackageBuilder:
-    """Manages package building across different distributions."""
+        if not package:
+            raise ValueError("No [package] section found in Cargo.toml")
+
+        authors = package.get("authors", [])
+        if not authors:
+            raise ValueError("No authors found in Cargo.toml")
+
+        maintainer_name, maintainer_email = parse_author(authors[0])
+
+        return cls(
+            package_name=package["name"],
+            version=package["version"],
+            description=package["description"],
+            license=package["license"],
+            maintainer_name=maintainer_name,
+            maintainer_email=maintainer_email,
+            repo_url=package.get("repository", ""),
+            homepage=package.get("homepage", package.get("repository", "")),
+        )
+
+class PackageGenerator:
+    """Generate package files for multiple distributions."""
     
     def __init__(self, project_root: Path):
         self.project_root = project_root
-        self.config = self._load_config()
-        self.env = self._setup_jinja()
-        
-    def get_supported_distributions(self) -> List[str]:
-        """Get list of supported distributions from config."""
-        return list(self.config.get("distributions", {}).get("dependencies", {}).keys())
-    def get_output_path(self, format_name: str, metadata: PackageMetadata) -> Path:
-        """Get the output path for a given format."""
-        # Split format name for variants (e.g., 'void-musl' -> ('void', 'musl'))
-        parts = format_name.split("-")
-        base_format = parts[0]
-        variant = parts[1] if len(parts) > 1 else None
+        self.packaging_dir = project_root / "packaging"
+        self.templates_dir = self.packaging_dir / "templates"
+        self.build_dir = self.packaging_dir / "build"
 
-        output_files = {
-            "nix": "flake.nix",
-            "rpm": f"{metadata.package_name}.spec",
-            "deb": "control",
-            "arch": "PKGBUILD",
-            "alpine": "APKBUILD",
-            "void": "template",
-        }
-
-        # Construct the build directory path
-        build_path = self.build_dir / base_format
-        if variant:
-            build_path = build_path / variant
-
-        return build_path / output_files[base_format]
-    def get_distribution_info(self, dist_name: str, dist_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Get distribution-specific information."""
-        dist_info = dist_config.get("distributions", {})
-        return {
-            "architectures": dist_info.get("arch", ["x86_64"]),
-            "dependencies": dist_info.get("dependencies", {}).get(dist_name, []),
-            "libc_variant": dist_info.get("libc", {}).get(dist_name),
-        }
-    def build_package(self, distribution: str) -> None:
-        """Build package for a specific distribution."""
-        if distribution not in self.get_supported_distributions():
-            raise ValueError(f"Unsupported distribution: {distribution}")
-            
-        cargo_toml = self.project_root / "Cargo.toml"
-        metadata = PackageMetadata.from_cargo_toml(cargo_toml, self.config)
-        
-        if self.config.get("build", {}).get("compute_checksums", True):
-            metadata.compute_checksums()
-        
-        self.generate_format(distribution, metadata)
-
-    def _load_config(self) -> Dict[str, Any]:
-        """Load distribution configuration from metadata.toml."""
-        config_path = self.project_root / "packaging" / "config" / "metadata.toml"
-        with open(config_path, "rb") as f:
-            return tomllib.load(f)
-
-    def _setup_jinja(self) -> jinja2.Environment:
-        """Set up the Jinja2 environment for templates."""
-        templates_dir = self.project_root / "packaging" / "templates"
-        return jinja2.Environment(
-            loader=jinja2.FileSystemLoader(templates_dir),
+        self.env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(self.templates_dir),
             undefined=jinja2.StrictUndefined,
             trim_blocks=True,
             lstrip_blocks=True,
         )
 
-def main():
-    """Main entry point for package generation."""
-    parser = argparse.ArgumentParser(description="Build packages for multiple distributions")
-    parser.add_argument(
-        "--distributions",
-        default="all",
-        help="Comma-separated list of distributions to build for"
-    )
-    
-    args = parser.parse_args()
-    project_root = Path(__file__).parent.parent.parent
-    
-    builder = PackageBuilder(project_root)
-    
-    if args.distributions == "all":
-        distributions = builder.get_supported_distributions()
-    else:
-        distributions = args.distributions.split(",")
-    
-    for dist in distributions:
-        print(f"\nBuilding package for {dist}...")
-        try:
-            builder.build_package(dist)
-        except Exception as e:
-            print(f"Error building package for {dist}: {e}")
-            continue
+        config_file = self.packaging_dir / "config" / "metadata.toml"
+        with open(config_file, "rb") as f:
+            self.config: PackageConfig = tomllib.load(f)
 
-if __name__ == "__main__":
-    main()
+        def get_output_path(self, format_name: str, metadata: PackageMetadata) -> Path:
+            """Get the output path for a given format."""
+            parts = format_name.split("-")
+            base_format = parts[0]
+            variant = parts[1] if len(parts) > 1 else None
+    
+            output_files = {
+                "nix": "flake.nix",
+                "rpm": f"{metadata.package_name}.spec",
+                "deb": "control",
+                "arch": "PKGBUILD",
+                "alpine": "APKBUILD",
+                "void": "template",
+            }
+    
+            build_path = self.build_dir / base_format
+            if variant:
+                build_path = build_path / variant
+    
+            return build_path / output_files[base_format]
+    
+        def get_supported_distributions(self) -> list[str]:
+            """Get list of supported distributions."""
+            return list(self.config["distributions"]["dependencies"].keys())
+
+        def generate_format(self, format_name: str, metadata: PackageMetadata) -> None:
+            """Generate a specific package format."""
+            # First generate any format-specific cargo configurations
+            if format_name == "deb":
+                self.generate_cargo_deb_config(metadata)
+            
+            # Use base format name for template
+            base_format = format_name.split("-")[0]
+            template = self.env.get_template(f"{base_format}.jinja2")
+            
+            output_path = self.get_output_path(format_name, metadata)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            metadata_dict = {
+                **metadata.__dict__,
+                "maintainer": metadata.maintainer,
+                "checksum": metadata.sha256sum,
+                **self.get_distribution_info(format_name, self.config),
+            }
+            
+            content = template.render(metadata_dict)
+            output_path.write_text(content)
+            print(f"Generated {output_path}")
+    
+        def generate_cargo_deb_config(self, metadata: PackageMetadata) -> None:
+            """Generate Cargo.deb.toml configuration."""
+            if "deb" not in self.config["distributions"]["dependencies"]:
+                return
+    
+            template = self.env.get_template("cargo.deb.toml.jinja2")
+            output_path = self.build_dir / "deb" / "Cargo.deb.toml"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            content = template.render(metadata.__dict__)
+            output_path.write_text(content)
+            print(f"Generated {output_path}")
+

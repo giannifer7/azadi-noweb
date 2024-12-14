@@ -1,15 +1,16 @@
-# Maintainer: {{ maintainer_name }} <{{ maintainer_email }}>
-pkgname={{ package_name }}
-pkgver={{ version }}
+# packaging/templates/arch.jinja2
+# Maintainer: {{ metadata.maintainer }}
+pkgname={{ metadata.package_name }}
+pkgver={{ metadata.version }}
 pkgrel=1
-pkgdesc="{{ description }}"
-arch=({% for arch in architectures %}'{{ arch }}'{% if not loop.last %} {% endif %}{% endfor %})
-url="{{ repo_url }}"
-license=('{{ license }}')
-depends=({% for dep in dependencies %}'{{ dep }}'{% if not loop.last %} {% endif %}{% endfor %})
+pkgdesc="{{ metadata.description }}"
+arch=({% for arch in config.arch %}'{{ arch }}'{% if not loop.last %} {% endif %}{% endfor %})
+url="{{ metadata.repo_url }}"
+license=('{{ metadata.license }}')
+depends=({% for dep in config.dependencies.arch %}'{{ dep }}'{% if not loop.last %} {% endif %}{% endfor %})
 makedepends=('rust' 'cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha512sums=('{{ sha512sum }}')
+sha512sums=('{{ metadata.sha512sum }}')
 
 build() {
     cd "$srcdir/$pkgname-$pkgver"

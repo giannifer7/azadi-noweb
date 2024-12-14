@@ -1,0 +1,16 @@
+# Introduction to the package generation system
+
+This system generates and builds packages for multiple Linux distributions while keeping
+the base Cargo.toml clean for Nix builds. The design follows these principles:
+- Single source of truth for package metadata
+- Distribution-specific configuration in separate files
+- Clean separation between generation and building
+- Type-safe implementation
+
+<[intro_overview]>=
+The system consists of these main components:
+1. A Python package generator using templates
+2. Docker-based build environments
+3. GitHub Actions workflows for automation
+4. Distribution-specific templates
+$$

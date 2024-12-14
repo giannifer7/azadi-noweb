@@ -1,13 +1,10 @@
-# .github/workflows/packages-void.yml
-name: Build Void Package
+# .github/workflows/packages-debian.yml
+name: Build Debian Package
 
 on:
   workflow_call:
     inputs:
       version:
-        required: true
-        type: string
-      variant:
         required: true
         type: string
 
@@ -29,10 +26,16 @@ jobs:
       - name: Build package
         run: |
           docker-compose -f packaging/scripts/docker/docker-compose.yml \
-            run --rm void-${{ inputs.variant }}
+            run --rm debian-build
+
+      - name: Test package
+        run: |
+          sudo dpkg -i packaging/build/deb/*.deb
+          azadi-noweb --version
+          azadi-noweb --help
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: void-${{ inputs.variant }}-package
-          path: /usr/src/void-packages/hostdir/binpkgs/*.xbps
+          name: debian-package
+          path: packaging/build/deb/*.deb

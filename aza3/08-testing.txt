@@ -1,3 +1,6 @@
+# Local testing guide
+
+<[@file packaging/scripts/README.md]>=
 # Package Building Guide
 
 ## Local Development Setup
@@ -103,3 +106,4 @@
    sudo usermod -aG docker $USER
    newgrp docker
    ```
+$$

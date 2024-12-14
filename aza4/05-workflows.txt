@@ -1,0 +1,84 @@
+# GitHub Actions workflow configurations
+
+Let's start with the Debian package workflow:
+
+<[debian_workflow_steps]>=
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build package
+        run: |
+          docker-compose -f packaging/scripts/docker/docker-compose.yml run --rm debian-build
+
+      - name: Test package
+        run: |
+          sudo apt-get update
+          sudo dpkg -i packaging/build/deb/*.deb
+          azadi-noweb --version
+          azadi-noweb --help
+$$
+
+<[@file .github/workflows/packages-debian.yml]>=
+# .github/workflows/packages-debian.yml
+name: Build Debian Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+<[debian_workflow_steps]>
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-package
+          path: packaging/build/deb/*.deb
+$$
+
+And update the release workflow to include Debian:
+
+<[@file .github/workflows/packages-release.yml additions]>=
+# .github/workflows/packages-release.yml additions
+  debian:
+    needs: generate
+    uses: ./.github/workflows/packages-debian.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  release:
+    needs: [generate, alpine, arch, void, debian]  # Added debian to needs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/alpine-package/*
+            artifacts/arch-package/*
+            artifacts/void-glibc-package/*
+            artifacts/void-musl-package/*
+            artifacts/debian-package/*  # Added debian packages
+          generate_release_notes: true
+$$
