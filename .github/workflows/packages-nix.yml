@@ -1,0 +1,41 @@
+# .github/workflows/packages-nix.yml
+name: Build Nix Package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v4
+
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packaging/build
+
+      - name: Build package
+        run: |
+          cd packaging/build/nix
+          nix build
+          
+      - name: Test package
+        run: |
+          result/bin/azadi-noweb --version
+          result/bin/azadi-noweb --help
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-package
+          path: result

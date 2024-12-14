@@ -1,0 +1,11 @@
+Here we'll set up Docker builders for multiple distributions while keeping our Cargo.toml clean for Nix builds. Our package generation will use the existing Python tooling to generate distribution-specific files from templates.
+
+<[@file packaging/scripts/docker/Builders.dockerfile]>=
+# packaging/scripts/docker/Builders.dockerfile
+
+<[base_docker_setup]>
+
+<[debian_builder_setup]>
+
+<[nix_builder_setup]>
+$$

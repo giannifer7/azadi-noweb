@@ -1,0 +1,34 @@
+# Packaging templates for different distributions
+
+First we define the Debian package metadata template chunks:
+
+<[cargo_deb_metadata]>=
+maintainer = "{{ maintainer }}"
+copyright = "2024, {{ maintainer }}"
+license-file = ["LICENSE", "4"]
+extended-description = """
+{{ description }}
+"""
+depends = "$auto"
+section = "devel"
+priority = "optional"
+$$
+
+<[cargo_deb_assets]>=
+assets = [
+    ["target/release/{{ package_name }}", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/{{ package_name }}/README.md", "644"],
+    ["LICENSE", "usr/share/doc/{{ package_name }}/", "644"]
+]
+$$
+
+Now we can compose the complete cargo.deb.toml template:
+
+<[@file packaging/templates/cargo.deb.toml.jinja2]>=
+# packaging/templates/cargo.deb.toml.jinja2
+[package.metadata.deb]
+
+<[cargo_deb_metadata]>
+
+<[cargo_deb_assets]>
+$$

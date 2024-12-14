@@ -1,3 +1,4 @@
+# .github/workflows/packages-release.yml
 name: Build and Release Packages
 on:
   push:
@@ -20,6 +21,18 @@ jobs:
     with:
       version: ${{ needs.generate.outputs.version }}
 
+  debian:
+    needs: generate
+    uses: ./.github/workflows/packages-debian.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
+  nix:
+    needs: generate
+    uses: ./.github/workflows/packages-nix.yml
+    with:
+      version: ${{ needs.generate.outputs.version }}
+
   void:
     needs: generate
     uses: ./.github/workflows/packages-void.yml
@@ -27,7 +40,7 @@ jobs:
       version: ${{ needs.generate.outputs.version }}
 
   release:
-    needs: [generate, alpine, arch, void]
+    needs: [generate, alpine, arch, void, debian, nix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,4 +57,6 @@ jobs:
             artifacts/arch-package/*
             artifacts/void-glibc-package/*
             artifacts/void-musl-package/*
+            artifacts/debian-package/*
+            artifacts/nix-package/*
           generate_release_notes: true

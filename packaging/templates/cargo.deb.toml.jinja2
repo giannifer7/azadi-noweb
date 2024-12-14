@@ -1,0 +1,18 @@
+# packaging/templates/cargo.deb.toml.jinja2
+[package.metadata.deb]
+
+maintainer = "{{ maintainer }}"
+copyright = "2024, {{ maintainer }}"
+license-file = ["LICENSE", "4"]
+extended-description = """
+{{ description }}
+"""
+depends = "$auto"
+section = "devel"
+priority = "optional"
+
+assets = [
+    ["target/release/{{ package_name }}", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/{{ package_name }}/README.md", "644"],
+    ["LICENSE", "usr/share/doc/{{ package_name }}/", "644"]
+]

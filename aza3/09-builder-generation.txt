@@ -1,0 +1,91 @@
+# Package generation functionality for PackageBuilder
+
+First, let's add path handling to the builder:
+
+<[package_builder_class]>=
+    def get_output_path(self, format_name: str, metadata: PackageMetadata) -> Path:
+        """Get the output path for a given format."""
+        # Split format name for variants (e.g., 'void-musl' -> ('void', 'musl'))
+        parts = format_name.split("-")
+        base_format = parts[0]
+        variant = parts[1] if len(parts) > 1 else None
+
+        output_files = {
+            "nix": "flake.nix",
+            "rpm": f"{metadata.package_name}.spec",
+            "deb": "control",
+            "arch": "PKGBUILD",
+            "alpine": "APKBUILD",
+            "void": "template",
+        }
+
+        # Construct the build directory path
+        build_path = self.build_dir / base_format
+        if variant:
+            build_path = build_path / variant
+
+        return build_path / output_files[base_format]
+$$
+
+Now add distribution-specific information handling:
+
+<[package_builder_class]>=
+    def get_distribution_info(self, dist_name: str, dist_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get distribution-specific information."""
+        dist_info = dist_config.get("distributions", {})
+        return {
+            "architectures": dist_info.get("arch", ["x86_64"]),
+            "dependencies": dist_info.get("dependencies", {}).get(dist_name, []),
+            "libc_variant": dist_info.get("libc", {}).get(dist_name),
+        }
+$$
+
+Let's add the format generation (which we referenced earlier):
+
+<[format_generator]>=
+    def generate_format(self, format_name: str, metadata: PackageMetadata) -> None:
+        """Generate a specific package format."""
+        # First generate any format-specific cargo configurations
+        if format_name == "deb":
+            self.generate_cargo_deb_config(metadata)
+        
+        # Use base format name for template
+        base_format = format_name.split("-")[0]
+        template = self.env.get_template(f"{base_format}.jinja2")
+        
+        output_path = self.get_output_path(format_name, metadata)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        metadata_dict = {
+            **metadata.__dict__,
+            "maintainer": metadata.maintainer,
+            "checksum": metadata.sha256sum,
+            **self.get_distribution_info(format_name, self.config),
+        }
+        
+        content = template.render(metadata_dict)
+        output_path.write_text(content)
+        print(f"Generated {output_path}")
+$$
+
+And the package building orchestration:
+
+<[package_builder_class]>=
+    def build_package(self, distribution: str) -> None:
+        """Build package for a specific distribution."""
+        if distribution not in self.get_supported_distributions():
+            raise ValueError(f"Unsupported distribution: {distribution}")
+            
+        cargo_toml = self.project_root / "Cargo.toml"
+        metadata = PackageMetadata.from_cargo_toml(cargo_toml, self.config)
+        
+        if self.config.get("build", {}).get("compute_checksums", True):
+            metadata.compute_checksums()
+        
+        self.generate_format(distribution, metadata)
+$$
+
+Would you like me to:
+1. Add the checksum computation functionality?
+2. Add the metadata loading from Cargo.toml?
+3. Add the error handling and validation?

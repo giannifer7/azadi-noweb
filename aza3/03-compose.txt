@@ -1,3 +1,22 @@
+# Docker Compose configuration for all builders
+
+<[volume_definitions]>=
+volumes:
+  void-glibc-cargo:
+  void-glibc-cache:
+  void-musl-cargo:
+  void-musl-cache:
+  debian-cargo:
+  nix-store:
+$$
+
+<[common_environment]>=
+environment:
+  - CARGO_HOME=/usr/local/cargo
+  - RUSTC_WRAPPER=sccache
+$$
+
+<[@file packaging/scripts/docker/docker-compose.yml]>=
 # packaging/scripts/docker/docker-compose.yml
 version: '3.8'
 
@@ -20,9 +39,7 @@ services:
     volumes:
       - ../../..:/build
       - debian-cargo:/usr/local/cargo/registry
-    environment:
-      - CARGO_HOME=/usr/local/cargo
-      - RUSTC_WRAPPER=sccache
+    <[common_environment]>
 
   nix-build:
     build:
@@ -35,10 +52,5 @@ services:
     environment:
       - NIX_PATH=nixpkgs=https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz
 
-volumes:
-  void-glibc-cargo:
-  void-glibc-cache:
-  void-musl-cargo:
-  void-musl-cache:
-  debian-cargo:
-  nix-store:
+<[volume_definitions]>
+$$
