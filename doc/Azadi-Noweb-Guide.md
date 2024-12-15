@@ -1,7 +1,8 @@
 
 ### Introduction to azadi-noweb
 
-**azadi-noweb** is a literate programming tool that enables structured and modular file generation using file chunks. This guide explains the conventions and workflows to ensure consistent and secure file generation.
+**azadi-noweb** is a literate programming tool that enables structured and modular file generation using file chunks. 
+This guide explains the conventions and workflows to ensure consistent and secure file generation.
 
 ---
 

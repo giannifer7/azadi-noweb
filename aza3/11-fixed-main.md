@@ -1,9 +1,23 @@
+# Main Program
+
+````rust
+<[@file src/main.rs]>=
 use azadi_noweb::{AzadiError, Clip, SafeFileWriter};
 use clap::Parser;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+<[cli_args]>
+
+<[write_chunks_fn]>
+
+<[run_fn]>
+
+<[main_fn]>
+$$
+
+<[cli_args]>=
 #[derive(Parser)]
 #[command(
     name = "azadi",
@@ -47,7 +61,9 @@ struct Args {
     #[arg(required = true)]
     files: Vec<PathBuf>,
 }
+$$
 
+<[write_chunks_fn]>=
 fn write_chunks<W: Write>(
     clipper: &Clip,
     chunks: &[&str],
@@ -59,7 +75,9 @@ fn write_chunks<W: Write>(
     }
     Ok(())
 }
+$$
 
+<[run_fn]>=
 fn run(args: Args) -> Result<(), AzadiError> {
     let comment_markers: Vec<String> = args
         .comment_markers
@@ -93,7 +111,9 @@ fn run(args: Args) -> Result<(), AzadiError> {
 
     Ok(())
 }
+$$
 
+<[main_fn]>=
 fn main() {
     let args = Args::parse();
 
@@ -102,3 +122,10 @@ fn main() {
         std::process::exit(1);
     }
 }
+$$
+````
+
+Would you like me to show:
+1. The corrected noweb.rs with ChunkWriter in its proper place?
+2. Updates to any other files affected by this change?
+3. New tests to verify the corrected structure?

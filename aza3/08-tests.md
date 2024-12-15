@@ -1,7 +1,25 @@
+# Test Implementation
+
+First, let's define our complete test file structure:
+
+````rust
+<[@file src/noweb_test.rs]>=
 use std::fs;
 use tempfile::TempDir;
 use super::*;
 
+<[test_constants]>
+
+<[test_setup]>
+
+<[test_implementations]>
+$$
+````
+
+Our test data constants, organized by use case:
+
+````rust
+<[test_constants]>=
 // Basic chunk recognition
 const BASIC_CHUNK: &str = r#"
 <<test>>=
@@ -9,17 +27,17 @@ Hello
 @
 "#;
 
-// Indentation handling with comments
+// Indentation handling
 const INDENTED_CHUNKS: &str = r#"
-<<outer>>=
-before
-    <<inner>>
-after
-@
+    # <<outer>>=
+    before
+        # <<inner>>
+    after
+    # @
 
-<<inner>>=
-nested
-@
+    # <<inner>>=
+    nested
+    # @
 "#;
 
 // Multi-language support
@@ -40,21 +58,30 @@ fn main() {
 const RST_FORMAT: &str = r#"
 .. code-block:: python
 
-    <<setup>>=
+    # <<setup>>=
     import sys
     
-        <<config>>
+        # <<config>>
     
     main()
-    @
+    # @
 
-    <<config>>=
+    # <<config>>=
     config = {
         'debug': True
     }
-    @
+    # @
 "#;
+$$
+````
 
+<antArtifact identifier="09-tests" type="text/markdown" title="09-tests.md">
+# Test Implementation Continued
+
+The test setup infrastructure:
+
+````rust
+<[test_setup]>=
 struct TestSetup {
     _temp_dir: TempDir,
     clip: Clip,
@@ -81,7 +108,12 @@ impl TestSetup {
         }
     }
 }
+$$
 
+The actual test implementations:
+
+````rust
+<[test_implementations]>=
 #[test]
 fn test_basic_chunk() {
     let mut setup = TestSetup::new(&["#", "//"]);
@@ -102,7 +134,7 @@ fn test_indentation() {
     let expanded = setup.clip.expand("outer", "").unwrap();
     assert_eq!(
         expanded,
-        vec!["before\n", "    nested\n", "after\n"]
+        vec!["    before\n", "        nested\n", "    after\n"]
     );
 }
 
@@ -128,14 +160,8 @@ fn test_rst_format() {
 
     let expanded = setup.clip.expand("setup", "").unwrap();
     assert_eq!(
-        expanded,
-        vec![
-            "    import sys\n",
-            "        config = {\n",
-            "            'debug': True\n",
-            "        }\n",
-            "    main()\n"
-        ]
+        expanded.join(""),
+        "    import sys\n        config = {\n            'debug': True\n        }\n    main()\n"
     );
 }
 
@@ -174,3 +200,5 @@ fn test_recursive_chunk_detection() {
         Err(AzadiError::Chunk(ChunkError::RecursiveReference(_)))
     ));
 }
+$$
+````

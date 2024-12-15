@@ -1,9 +1,29 @@
-use azadi_noweb::{AzadiError, Clip, SafeFileWriter};
+# Main Program Implementation
+
+Let's start with our complete file structure:
+
+````rust
+<[@file src/main.rs]>=
 use clap::Parser;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use azadi_noweb::{AzadiError, Clip, SafeFileWriter};
 
+<[cli_args]>
+
+<[chunk_writer]>
+
+<[run_function]>
+
+<[main_function]>
+$$
+````
+
+Now let's define each component:
+
+````rust
+<[cli_args]>=
 #[derive(Parser)]
 #[command(
     name = "azadi",
@@ -47,7 +67,10 @@ struct Args {
     #[arg(required = true)]
     files: Vec<PathBuf>,
 }
+$$
 
+````rust
+<[chunk_writer]>=
 fn write_chunks<W: Write>(
     clipper: &Clip,
     chunks: &[&str],
@@ -59,10 +82,12 @@ fn write_chunks<W: Write>(
     }
     Ok(())
 }
+$$
 
+````rust
+<[run_function]>=
 fn run(args: Args) -> Result<(), AzadiError> {
-    let comment_markers: Vec<String> = args
-        .comment_markers
+    let comment_markers: Vec<String> = args.comment_markers
         .split(',')
         .map(|s| s.trim().to_string())
         .collect();
@@ -93,7 +118,10 @@ fn run(args: Args) -> Result<(), AzadiError> {
 
     Ok(())
 }
+$$
 
+````rust
+<[main_function]>=
 fn main() {
     let args = Args::parse();
 
@@ -102,3 +130,7 @@ fn main() {
         std::process::exit(1);
     }
 }
+$$
+````
+
+Would you like me to reorganize any of the other files in this top-down style as well?

@@ -1,12 +1,9 @@
-use regex::Regex;
-use std::collections::HashMap;
-use std::fs;
-use std::io::{self, Write};
-use std::path::Path;
+# Noweb Implementation with Comment Support
 
-use crate::AzadiError;
-use crate::SafeFileWriter;
+First, let's define our error types for proper error handling:
 
+````rust
+<[error_types]>=
 #[derive(Debug)]
 pub enum ChunkError {
     RecursionLimit(String),
@@ -50,61 +47,55 @@ impl From<AzadiError> for ChunkError {
         ))
     }
 }
+$$
+````
 
+Next, the core ChunkStore that handles chunk parsing and storage:
+
+````rust
+<[chunk_store]>=
 pub struct ChunkStore {
-    chunks: HashMap<String, Chunk>,
+    chunks: HashMap<String, Vec<String>>,
     file_chunks: Vec<String>,
     open_re: Regex,
     slot_re: Regex,
     close_re: Regex,
 }
+$$
 
-#[derive(Debug)]
-struct Chunk {
-    content: Vec<String>,
-    base_indent: usize,
-}
+The regex patterns are crucial for handling commented and uncommented chunk syntax:
 
-impl Chunk {
-    fn new(base_indent: usize) -> Self {
-        Self {
-            content: Vec::new(),
-            base_indent,
-        }
-    }
+````rust
+<[regex_patterns]>=
+// Pattern for chunk definitions: optional comment marker followed by <<name>>=
+let open_pattern = format!(
+    r"\s*(?:{})?[ \t]*{}(.+){}=",
+    comment_markers.join("|"),
+    open_escaped,
+    close_escaped
+);
 
-    fn add_line(&mut self, line: String) {
-        self.content.push(line);
-    }
-}
+// Pattern for chunk references: preserve indentation capture while allowing comments
+let slot_pattern = format!(
+    r"(\s*)(?:{})?[ \t]*{}(.+){}\s*$",
+    comment_markers.join("|"),
+    open_escaped,
+    close_escaped
+);
 
-pub struct ChunkWriter<'a> {
-    safe_file_writer: &'a mut SafeFileWriter,
-}
+// Pattern for chunk end: optional comment marker followed by end marker
+let close_pattern = format!(
+    r"\s*(?:{})?[ \t]*{}\s*$",
+    comment_markers.join("|"),
+    regex::escape(chunk_end)
+);
+$$
+````
 
-impl<'a> ChunkWriter<'a> {
-    pub fn new(safe_file_writer: &'a mut SafeFileWriter) -> Self {
-        ChunkWriter { safe_file_writer }
-    }
+The ChunkStore implementation:
 
-    pub fn write_chunk(&mut self, chunk_name: &str, content: &[String]) -> Result<(), AzadiError> {
-        if !chunk_name.starts_with("@file") {
-            return Ok(());
-        }
-
-        let filename = &chunk_name[5..].trim();
-        let dest_filename = self.safe_file_writer.before_write(filename)?;
-
-        let mut file = fs::File::create(&dest_filename)?;
-        for line in content {
-            file.write_all(line.as_bytes())?;
-        }
-
-        self.safe_file_writer.after_write(filename)?;
-        Ok(())
-    }
-}
-
+````rust
+<[chunk_store_implementation]>=
 impl ChunkStore {
     pub fn new(
         open_delim: &str,
@@ -115,28 +106,7 @@ impl ChunkStore {
         let open_escaped = regex::escape(open_delim);
         let close_escaped = regex::escape(close_delim);
 
-        // Pattern for chunk definitions (capture indentation)
-        let open_pattern = format!(
-            r"^(\s*)(?:{})?[ \t]*{}(.+){}=",
-            comment_markers.join("|"),
-            open_escaped,
-            close_escaped
-        );
-        
-        // Pattern for chunk references (preserve relative indentation)
-        let slot_pattern = format!(
-            r"(\s*)(?:{})?[ \t]*{}(.+){}\s*$",
-            comment_markers.join("|"),
-            open_escaped,
-            close_escaped
-        );
-        
-        // Pattern for chunk end
-        let close_pattern = format!(
-            r"^(?:{})?[ \t]*{}\s*$",
-            comment_markers.join("|"),
-            regex::escape(chunk_end)
-        );
+        <[regex_patterns]>
 
         ChunkStore {
             chunks: HashMap::new(),
@@ -152,10 +122,9 @@ impl ChunkStore {
 
         for line in text.lines() {
             if let Some(captures) = self.open_re.captures(line) {
-                let indentation = captures.get(1).map_or("", |m| m.as_str());
-                let name = captures.get(2).map_or("", |m| m.as_str()).to_string();
+                let name = captures[1].to_string();
                 chunk_name = Some(name.clone());
-                self.chunks.insert(name, Chunk::new(indentation.len()));
+                self.chunks.entry(name).or_default();
                 continue;
             }
 
@@ -165,11 +134,11 @@ impl ChunkStore {
             }
 
             if let Some(ref name) = chunk_name {
-                if let Some(chunk) = self.chunks.get_mut(name) {
+                if let Some(chunk_lines) = self.chunks.get_mut(name) {
                     if line.ends_with('\n') {
-                        chunk.add_line(line.to_owned());
+                        chunk_lines.push(line.to_owned());
                     } else {
-                        chunk.add_line(format!("{}\n", line));
+                        chunk_lines.push(format!("{}\n", line));
                     }
                 }
             }
@@ -186,7 +155,7 @@ impl ChunkStore {
     pub fn expand_with_depth(
         &self,
         chunk_name: &str,
-        target_indent: &str,
+        indent: &str,
         depth: usize,
         seen: &mut Vec<String>,
     ) -> Result<Vec<String>, ChunkError> {
@@ -203,23 +172,16 @@ impl ChunkStore {
 
         let mut result = Vec::new();
 
-        if let Some(chunk) = self.chunks.get(chunk_name) {
-            for line in &chunk.content {
+        if let Some(chunk_lines) = self.chunks.get(chunk_name) {
+            for line in chunk_lines {
                 if let Some(captures) = self.slot_re.captures(line) {
                     let additional_indent = captures.get(1).map_or("", |m| m.as_str());
                     let referenced_chunk = captures.get(2).map_or("", |m| m.as_str());
 
-                    // Adjust indentation relative to chunk's base indent
-                    let relative_indent = if additional_indent.len() > chunk.base_indent {
-                        &additional_indent[chunk.base_indent..]
+                    let new_indent = if indent.is_empty() {
+                        additional_indent.to_owned()
                     } else {
-                        ""
-                    };
-
-                    let new_indent = if target_indent.is_empty() {
-                        relative_indent.to_owned()
-                    } else {
-                        format!("{}{}", target_indent, relative_indent)
+                        format!("{}{}", indent, additional_indent)
                     };
 
                     let expanded = self.expand_with_depth(
@@ -230,17 +192,14 @@ impl ChunkStore {
                     )?;
                     result.extend(expanded);
                 } else {
-                    let line_indent = if line.len() > chunk.base_indent {
-                        &line[chunk.base_indent..]
-                    } else {
-                        line
-                    };
-
-                    if target_indent.is_empty() {
-                        result.push(line_indent.to_owned());
-                    } else {
-                        result.push(format!("{}{}", target_indent, line_indent));
+                    let mut new_line = line.clone();
+                    if !indent.is_empty() {
+                        let mut with_indent = String::with_capacity(indent.len() + new_line.len());
+                        with_indent.push_str(indent);
+                        with_indent.push_str(&new_line);
+                        new_line = with_indent;
                     }
+                    result.push(new_line);
                 }
             }
         } else {
@@ -274,10 +233,58 @@ impl ChunkStore {
         self.chunks.contains_key(name)
     }
 }
+$$
+````
+
+Now let's put it all together in the main file:
+
+````rust
+<[@file src/noweb.rs]>=
+use regex::Regex;
+use std::collections::HashMap;
+use std::fs;
+use std::io::{self, Write};
+use std::path::Path;
+
+use crate::AzadiError;
+use crate::SafeFileWriter;
+
+<[error_types]>
+
+<[chunk_store]>
+
+<[chunk_store_implementation]>
+
+pub struct ChunkWriter<'a> {
+    safe_file_writer: &'a mut SafeFileWriter,
+}
 
 pub struct Clip {
     store: ChunkStore,
     writer: SafeFileWriter,
+}
+
+impl<'a> ChunkWriter<'a> {
+    pub fn new(safe_file_writer: &'a mut SafeFileWriter) -> Self {
+        ChunkWriter { safe_file_writer }
+    }
+
+    pub fn write_chunk(&mut self, chunk_name: &str, content: &[String]) -> Result<(), AzadiError> {
+        if !chunk_name.starts_with("@file") {
+            return Ok(());
+        }
+
+        let filename = &chunk_name[5..].trim();
+        let dest_filename = self.safe_file_writer.before_write(filename)?;
+
+        let mut file = fs::File::create(&dest_filename)?;
+        for line in content {
+            file.write_all(line.as_bytes())?;
+        }
+
+        self.safe_file_writer.after_write(filename)?;
+        Ok(())
+    }
 }
 
 impl Clip {
@@ -319,6 +326,7 @@ impl Clip {
                 writer.write_chunk(file_chunk, &expanded_content)?;
             }
         }
+
         Ok(())
     }
 
@@ -358,3 +366,10 @@ impl Clip {
         self.store.get_file_chunks()
     }
 }
+$$
+````
+
+Would you like me to continue with:
+1. The test file updates?
+2. The CLI changes for comment markers?
+3. An example of how to use the new comment-aware functionality?

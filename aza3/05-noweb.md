@@ -1,3 +1,7 @@
+# Core Library Implementation
+
+````rust
+<[@file src/noweb.rs]>=
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
@@ -7,6 +11,18 @@ use std::path::Path;
 use crate::AzadiError;
 use crate::SafeFileWriter;
 
+<[error_types]>
+
+<[chunk_store]>
+
+<[chunk_writer]>
+
+<[chunk_store_implementation]>
+
+<[clip_implementation]>
+$$
+
+<[error_types]>=
 #[derive(Debug)]
 pub enum ChunkError {
     RecursionLimit(String),
@@ -50,7 +66,9 @@ impl From<AzadiError> for ChunkError {
         ))
     }
 }
+$$
 
+<[chunk_store]>=
 pub struct ChunkStore {
     chunks: HashMap<String, Chunk>,
     file_chunks: Vec<String>,
@@ -77,7 +95,9 @@ impl Chunk {
         self.content.push(line);
     }
 }
+$$
 
+<[chunk_writer]>=
 pub struct ChunkWriter<'a> {
     safe_file_writer: &'a mut SafeFileWriter,
 }
@@ -104,7 +124,9 @@ impl<'a> ChunkWriter<'a> {
         Ok(())
     }
 }
+$$
 
+<[chunk_store_implementation]>=
 impl ChunkStore {
     pub fn new(
         open_delim: &str,
@@ -115,28 +137,7 @@ impl ChunkStore {
         let open_escaped = regex::escape(open_delim);
         let close_escaped = regex::escape(close_delim);
 
-        // Pattern for chunk definitions (capture indentation)
-        let open_pattern = format!(
-            r"^(\s*)(?:{})?[ \t]*{}(.+){}=",
-            comment_markers.join("|"),
-            open_escaped,
-            close_escaped
-        );
-        
-        // Pattern for chunk references (preserve relative indentation)
-        let slot_pattern = format!(
-            r"(\s*)(?:{})?[ \t]*{}(.+){}\s*$",
-            comment_markers.join("|"),
-            open_escaped,
-            close_escaped
-        );
-        
-        // Pattern for chunk end
-        let close_pattern = format!(
-            r"^(?:{})?[ \t]*{}\s*$",
-            comment_markers.join("|"),
-            regex::escape(chunk_end)
-        );
+        <[regex_patterns]>
 
         ChunkStore {
             chunks: HashMap::new(),
@@ -274,7 +275,34 @@ impl ChunkStore {
         self.chunks.contains_key(name)
     }
 }
+$$
 
+<[regex_patterns]>=
+// Pattern for chunk definitions (capture indentation)
+let open_pattern = format!(
+    r"^(\s*)(?:{})?[ \t]*{}(.+){}=",
+    comment_markers.join("|"),
+    open_escaped,
+    close_escaped
+);
+
+// Pattern for chunk references (preserve relative indentation)
+let slot_pattern = format!(
+    r"(\s*)(?:{})?[ \t]*{}(.+){}\s*$",
+    comment_markers.join("|"),
+    open_escaped,
+    close_escaped
+);
+
+// Pattern for chunk end
+let close_pattern = format!(
+    r"^(?:{})?[ \t]*{}\s*$",
+    comment_markers.join("|"),
+    regex::escape(chunk_end)
+);
+$$
+
+<[clip_implementation]>=
 pub struct Clip {
     store: ChunkStore,
     writer: SafeFileWriter,
@@ -358,3 +386,7 @@ impl Clip {
         self.store.get_file_chunks()
     }
 }
+$$
+````
+
+[continuing with main and tests in next artifacts...]
