@@ -1,0 +1,319 @@
+from __future__ import annotations
+
+import os
+import hashlib
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from pkg_gen.errors import BuildError, ConfigError, ValidationError
+from pkg_gen.metadata import PackageMetadata
+
+
+def run_cmd(
+    cmd: list[str], check: bool = True, **kwargs
+) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            cmd, check=check, capture_output=True, text=True, **kwargs
+        )
+    except subprocess.CalledProcessError as e:
+        error_msg = f"""Command failed: {' '.join(cmd)}
+stdout: {e.stdout}
+stderr: {e.stderr}
+return code: {e.returncode}"""
+        raise BuildError(error_msg)
+
+
+@dataclass
+class ChrootConfig:
+    root_path: Path
+    build_path: Path
+
+    @classmethod
+    def create(cls, base_path: Path) -> ChrootConfig:
+        root_path = base_path / "root"
+        build_path = base_path / "build"
+        return cls(root_path=root_path, build_path=build_path)
+
+
+class ArchBuilder:
+    def __init__(self, project_root: Path, dist_name: str):
+        self._project_root = project_root
+        self._dist_name = dist_name
+        self._build_dir = project_root / "packaging" / "build" / dist_name
+        self._chroot_base = project_root / "packaging" / "build" / "chroot"
+        self._chroot = ChrootConfig.create(self._chroot_base)
+        self._session = requests.Session()
+        retry_strategy = Retry(
+            total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
+
+    @property
+    def project_root(self) -> Path:
+        return self._project_root
+
+    @property
+    def dist_name(self) -> str:
+        return self._dist_name
+
+    @property
+    def build_dir(self) -> Path:
+        return self._build_dir
+
+    def _get_build_user(self) -> str:
+        # return "builduser"
+        return "g4"
+
+    def _ensure_devtools_installed(self) -> None:
+        try:
+            run_cmd(["pacman", "-Qi", "devtools"])
+        except BuildError:
+            raise BuildError(
+                "devtools is not installed. Please install it with: sudo pacman -S devtools"
+            )
+
+    def _ensure_build_user(self) -> None:
+        builduser = self._get_build_user()
+        try:
+            run_cmd(["id", builduser])
+        except BuildError:
+            run_cmd(["sudo", "useradd", "-m", "-r", "-U", builduser])
+            current_user = run_cmd(["id", "-un"]).stdout.strip()
+            run_cmd(["sudo", "usermod", "-a", "-G", builduser, current_user])
+            run_cmd(["newgrp", builduser])
+            sudoers_line = f"{builduser} ALL=(ALL) NOPASSWD: ALL"
+            run_cmd(
+                [
+                    "sudo",
+                    "bash",
+                    "-c",
+                    f"echo '{sudoers_line}' > /etc/sudoers.d/{builduser}",
+                ]
+            )
+
+    def _unmount_chroot(self, chroot_path: Path) -> None:
+        try:
+            result = run_cmd(["mountpoint", "-q", str(chroot_path)], check=False)
+            if result.returncode == 0:
+                run_cmd(["sudo", "umount", str(chroot_path)])
+        except BuildError as e:
+            print(f"Warning: Failed to unmount {chroot_path}: {e}")
+
+    def _setup_chroot(self) -> None:
+        self._chroot_base.mkdir(parents=True, exist_ok=True)
+        root_chroot = self._chroot.root_path
+        if root_chroot.exists():
+            self._unmount_chroot(root_chroot)
+            run_cmd(["sudo", "rm", "-rf", str(root_chroot)])
+
+        builduser = self._get_build_user()
+
+        # Create base chroot with base-devel
+        run_cmd(["sudo", "mkarchroot", str(root_chroot), "base-devel"])
+        return
+
+        # Copy resolv.conf
+        run_cmd(
+            [
+                "sudo",
+                "install",
+                "-m",
+                "644",
+                "/etc/resolv.conf",
+                str(root_chroot / "etc/resolv.conf"),
+            ]
+        )
+
+        # Initialize pacman keys
+        run_cmd(["sudo", "arch-chroot", str(root_chroot), "pacman-key", "--init"])
+        run_cmd(
+            [
+                "sudo",
+                "arch-chroot",
+                str(root_chroot),
+                "pacman-key",
+                "--populate",
+                "archlinux",
+            ]
+        )
+
+        # Create builduser inside chroot
+        run_cmd(["sudo", "arch-chroot", str(root_chroot), "useradd", "-m", builduser])
+
+        # Modify /etc/makepkg.conf inside the root chroot to set SRCDEST and PKGDEST
+        makepkg_conf_path = root_chroot / "etc" / "makepkg.conf"
+        original_conf = makepkg_conf_path.read_text()
+        modified_conf = (
+            original_conf
+            + '\nSRCDEST="/home/builduser/src"\nPKGDEST="/home/builduser/pkg"\n'
+        )
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmpconf:
+            tmpconf.write(modified_conf)
+            tmpconf_path = Path(tmpconf.name)
+
+        # run_cmd(            ["sudo", "install", "-m", "644", str(tmpconf_path), str(makepkg_conf_path)]        )
+        tmpconf_path.unlink(missing_ok=True)
+
+        # Create src and pkg directories for builduser
+        run_cmd(
+            [
+                "sudo",
+                "arch-chroot",
+                str(root_chroot),
+                "mkdir",
+                "-p",
+                "/home/builduser/src",
+            ]
+        )
+        run_cmd(
+            [
+                "sudo",
+                "arch-chroot",
+                str(root_chroot),
+                "mkdir",
+                "-p",
+                "/home/builduser/pkg",
+            ]
+        )
+        run_cmd(
+            [
+                "sudo",
+                "arch-chroot",
+                str(root_chroot),
+                "chown",
+                f"{builduser}:{builduser}",
+                "/home/builduser/src",
+            ]
+        )
+        run_cmd(
+            [
+                "sudo",
+                "arch-chroot",
+                str(root_chroot),
+                "chown",
+                f"{builduser}:{builduser}",
+                "/home/builduser/pkg",
+            ]
+        )
+
+        # Now /etc/makepkg.conf in root is updated, and when makechrootpkg runs, it will copy root to builduser.
+
+    def _write_file_as_builduser(self, content: str | bytes, dest: Path) -> None:
+        builduser = self._get_build_user()
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False) as tmp:
+            if isinstance(content, str):
+                tmp.write(content.encode())
+            else:
+                tmp.write(content)
+            tmp_path = Path(tmp.name)
+        try:
+            run_cmd(
+                [
+                    "sudo",
+                    "install",
+                    "-o",
+                    builduser,
+                    "-g",
+                    builduser,
+                    "-m",
+                    "644",
+                    str(tmp_path),
+                    str(dest),
+                ]
+            )
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def _download_release(self, metadata: PackageMetadata) -> tuple[Path, str]:
+        url = f"{metadata.repo_url}/archive/refs/tags/v{metadata.version}.tar.gz"
+        response = self._session.get(url, timeout=30)
+        response.raise_for_status()
+        sha512 = hashlib.sha512()
+        sha512.update(response.content)
+        checksum = sha512.hexdigest()
+        tarball = self.build_dir / f"{metadata.package_name}-{metadata.version}.tar.gz"
+        self._write_file_as_builduser(response.content, tarball)
+        return tarball, checksum
+
+    def _prepare_build(self, metadata: PackageMetadata) -> None:
+        self.build_dir.mkdir(parents=True, exist_ok=True)
+        builduser = self._get_build_user()
+        run_cmd(
+            ["sudo", "chown", "-R", f"{builduser}:{builduser}", str(self.build_dir)]
+        )
+        run_cmd(["sudo", "chmod", "-R", "ug+rw", str(self.build_dir)])
+        pkgbuild_path = self.build_dir / "PKGBUILD"
+        if not pkgbuild_path.exists():
+            raise ConfigError(f"PKGBUILD not found at {pkgbuild_path}")
+        _, checksum = self._download_release(metadata)
+        content = pkgbuild_path.read_text()
+        content = content.replace("sha512sums=('None')", f"sha512sums=('{checksum}')")
+        self._write_file_as_builduser(content, pkgbuild_path)
+        if not pkgbuild_path.exists():
+            raise BuildError("PKGBUILD file missing after preparation")
+        if not list(self.build_dir.glob("*.tar.gz")):
+            raise BuildError("Source tarball missing after preparation")
+
+    def build(self, metadata: PackageMetadata) -> Path:
+        self._ensure_devtools_installed()
+        self._ensure_build_user()
+        self._setup_chroot()
+        self._prepare_build(metadata)
+        env = os.environ.copy()
+        env["CHROOT"] = self._chroot_base
+
+        run_cmd(
+            [
+                "extra-x86_64-build",
+            ],
+            cwd=self.build_dir,
+            env=env,
+        )
+
+        # run_cmd(
+        #     [
+        #         "makechrootpkg",
+        #         "-c",
+        #         "-r",
+        #         str(self._chroot_base),
+        #         "-U",
+        #         self._get_build_user(),
+        #         "-l",
+        #         self._get_build_user(),
+        #     ],
+        #     cwd=self.build_dir,
+        # )
+        try:
+            return next(
+                self.build_dir.glob(
+                    f"{metadata.package_name}-{metadata.version}*.pkg.tar.zst"
+                )
+            )
+        except StopIteration:
+            raise BuildError("No .pkg.tar.zst package was generated")
+
+    def verify(self, package_path: Path) -> None:
+        run_cmd(["pacman", "-Qp", package_path])
+        buildinfo_path = package_path.with_suffix(".pkg.tar.zst.buildinfo")
+        if not buildinfo_path.exists():
+            raise ValidationError("Missing .buildinfo file")
+
+    def cleanup(self) -> None:
+        if self._chroot_base.exists():
+            root_chroot = self._chroot.root_path
+            if root_chroot.exists():
+                self._unmount_chroot(root_chroot)
+            try:
+                run_cmd(["sudo", "rm", "-rf", str(self._chroot_base)])
+            except BuildError as e:
+                print(f"Warning: Failed to clean up chroot environment: {e}")

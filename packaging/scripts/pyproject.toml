@@ -1,5 +1,5 @@
 [project]
-name = "package-generator"
+name = "pkg_gen"
 version = "0.1.0"
 description = "Package generation tools for azadi-noweb"
 authors = [
@@ -8,14 +8,15 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "click>=8.1.7",
     "jinja2>=3.1.4",
-    "requests>=2.32.3"
+    "requests>=2.32.3",
+    "types-jinja2>=2.11.9",
+    "types-requests>=2.32.0.20241016",
 ]
 
 [project.scripts]
-generate_packages = "generate_packages:main"
-docker_void = "docker_void:main"
+generate_packages = "pkg_gen.generator:main"
+docker_void = "pkg_gen.docker_void:main"
 
 [project.optional-dependencies]
 dev = [
@@ -30,7 +31,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/pkg_gen"]
 
 [tool.mypy]
 python_version = "3.12"

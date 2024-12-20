@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+# Initialize pacman keyring
+pacman-key --init
+pacman-key --populate archlinux
+
+# Create build user
+useradd -m {{ builduser }}

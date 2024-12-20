@@ -49,7 +49,7 @@ struct Args {
 }
 
 fn write_chunks<W: Write>(
-    clipper: &Clip,
+    clipper: &mut Clip,
     chunks: &[&str],
     writer: &mut W,
 ) -> Result<(), AzadiError> {
@@ -83,11 +83,11 @@ fn run(args: Args) -> Result<(), AzadiError> {
         let chunks: Vec<&str> = chunks.split(',').collect();
         if let Some(output_path) = args.output {
             let mut file = File::create(output_path)?;
-            write_chunks(&clipper, &chunks, &mut file)?;
+            write_chunks(&mut clipper, &chunks, &mut file)?;
         } else {
             let stdout = io::stdout();
             let mut handle = stdout.lock();
-            write_chunks(&clipper, &chunks, &mut handle)?;
+            write_chunks(&mut clipper, &chunks, &mut handle)?;
         }
     }
 

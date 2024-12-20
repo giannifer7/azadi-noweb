@@ -1,14 +1,14 @@
-# Contributor: {{ maintainer }}
-# Maintainer: {{ maintainer }}
-pkgname={{ package_name }}
-pkgver={{ version }}
+# Contributor: {{ metadata.maintainer }}
+# Maintainer: {{ metadata.maintainer }}
+pkgname={{ metadata.package_name }}
+pkgver={{ metadata.version }}
 pkgrel=0
-pkgdesc="{{ description }}"
-url="{{ homepage }}"
-arch="{{ ' '.join(architectures) }}"
-license="{{ license }}"
-makedepends="{{ ' '.join(dependencies) }}"
-source="$pkgname-$pkgver.tar.gz::{{ repo_url }}/archive/v$pkgver.tar.gz"
+pkgdesc="{{ metadata.description }}"
+url="{{ metadata.homepage }}"
+arch="{{ ' '.join(config.arch) }}"
+license="{{ metadata.license }}"
+makedepends="{{ ' '.join(config.dependencies.alpine) }}"
+source="$pkgname-$pkgver.tar.gz::{{ metadata.repo_url }}/archive/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
 prepare() {
