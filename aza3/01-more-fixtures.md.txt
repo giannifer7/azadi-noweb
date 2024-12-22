@@ -1,0 +1,159 @@
+# More Test Fixtures
+Adding the remaining fixtures to test_common.rs:
+
+```rust
+// <[@replace test-fixtures]>=
+pub const BASIC_CHUNK: &str = r#"
+# <<test>>=
+Hello
+# @
+"#;
+
+pub const TWO_CHUNKS: &str = r#"
+# <<chunk1>>=
+First chunk
+# @
+# <<chunk2>>=
+Second chunk
+# @
+"#;
+
+pub const NESTED_CHUNKS: &str = r#"
+# <<outer>>=
+Before
+# <<inner>>
+After
+# @
+# <<inner>>=
+Nested content
+# @
+"#;
+
+pub const INDENTED_CHUNK: &str = r#"
+# <<main>>=
+    # <<indented>>
+# @
+# <<indented>>=
+some code
+# @
+"#;
+
+pub const PYTHON_CODE: &str = r#"
+# <<code>>=
+def example():
+    # <<body>>
+# @
+# <<body>>=
+print('hello')
+# @
+"#;
+
+pub const MULTI_COMMENT_CHUNKS: &str = r#"
+# <<python_chunk>>=
+def hello():
+    print("Hello")
+# @
+
+// <<rust_chunk>>=
+fn main() {
+    println!("Hello");
+}
+// @
+"#;
+
+pub const FILE_CHUNKS: &str = r#"
+# <<@file output.txt>>=
+content
+# @
+# <<other>>=
+other content
+# @
+"#;
+
+pub const TWO_FILES: &str = r#"
+# <<@file file1.txt>>=
+Content 1
+# @
+# <<@file file2.txt>>=
+Content 2
+# @
+"#;
+
+pub const SEQUENTIAL_CHUNKS: &str = r#"
+# <<main>>=
+# <<part1>>
+# <<part2>>
+# @
+# <<part1>>=
+First part
+# @
+# <<part2>>=
+Second part
+# @
+"#;
+
+pub const EMPTY_CHUNK: &str = r#"
+# <<empty>>=
+# @
+"#;
+// $$
+```
+
+Now let's start with the basic tests file:
+
+```rust
+// <[@file src/noweb_new_test.rs]>=
+mod test_common;
+use test_common::*;
+
+// <[basic-chunk-tests]>
+// <[indentation-tests]>
+// <[comment-style-tests]>
+// $$
+```
+
+Let's implement the basic chunk tests:
+
+```rust
+// <[basic-chunk-tests]>=
+#[test]
+fn test_basic_chunk() {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(BASIC_CHUNK, "test_basic.nw");
+
+    assert!(setup.clip.has_chunk("test"));
+    assert_eq!(
+        setup.clip.get_chunk_content("test").unwrap(),
+        vec!["Hello\n"]
+    );
+}
+
+#[test]
+fn test_multiple_chunks() {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(TWO_CHUNKS, "test_multiple.nw");
+
+    assert!(setup.clip.has_chunk("chunk1"));
+    assert!(setup.clip.has_chunk("chunk2"));
+    assert_eq!(
+        setup.clip.get_chunk_content("chunk1").unwrap(),
+        vec!["First chunk\n"]
+    );
+    assert_eq!(
+        setup.clip.get_chunk_content("chunk2").unwrap(),
+        vec!["Second chunk\n"]
+    );
+}
+
+#[test]
+fn test_nested_chunk_expansion() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(NESTED_CHUNKS, "test_nested.nw");
+
+    let expanded = setup.clip.expand("outer", "")?;
+    let expected = vec!["Before\n", "Nested content\n", "After\n"];
+    assert_eq!(expanded, expected, "Nested chunks should expand correctly");
+    Ok(())
+}
+// $$
+```

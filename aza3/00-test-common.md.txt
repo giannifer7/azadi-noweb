@@ -1,0 +1,101 @@
+# Common Test Infrastructure
+This file defines the basic test infrastructure and fixtures shared across our test files.
+
+```rust
+// <[@file src/test_common.rs]>=
+use super::*;
+use std::fs;
+use tempfile::TempDir;
+
+// <[test-setup]>
+// <[test-fixtures]>
+// <[test-helpers]>
+// $$
+```
+
+## Basic Test Setup
+
+```rust
+// <[test-setup]>=
+pub struct TestSetup {
+    pub _temp_dir: TempDir,
+    pub clip: Clip,
+}
+
+impl TestSetup {
+    pub fn new(comment_markers: &[&str]) -> Self {
+        let temp_dir = TempDir::new().unwrap();
+        let gen_path = temp_dir.path().join("gen");
+        let private_path = temp_dir.path().join("private");
+        fs::create_dir_all(&gen_path).unwrap();
+        fs::create_dir_all(&private_path).unwrap();
+        let safe_writer = SafeFileWriter::new(gen_path, private_path);
+
+        let comment_markers = comment_markers
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        let clip = Clip::new(safe_writer, "<<", ">>", "@", &comment_markers);
+
+        TestSetup {
+            _temp_dir: temp_dir,
+            clip,
+        }
+    }
+}
+// $$
+
+## Test Fixtures
+All the sample chunks used across different tests:
+
+```rust
+// <[test-fixtures]>=
+pub const BASIC_CHUNK: &str = r#"
+# <<test>>=
+Hello
+# @
+"#;
+
+pub const TWO_CHUNKS: &str = r#"
+# <<chunk1>>=
+First chunk
+# @
+# <<chunk2>>=
+Second chunk
+# @
+"#;
+
+pub const NESTED_CHUNKS: &str = r#"
+# <<outer>>=
+Before
+# <<inner>>
+After
+# @
+# <<inner>>=
+Nested content
+# @
+"#;
+
+pub const INDENTED_CHUNK: &str = r#"
+# <<main>>=
+    # <<indented>>
+# @
+# <<indented>>=
+some code
+# @
+"#;
+
+pub const PYTHON_CODE: &str = r#"
+# <<code>>=
+def example():
+    # <<body>>
+# @
+# <<body>>=
+print('hello')
+# @
+"#;
+// $$
+```
+
+Would you like me to continue with the rest of the fixtures and start with the basic tests file? I'm keeping each section focused and under 300 lines.

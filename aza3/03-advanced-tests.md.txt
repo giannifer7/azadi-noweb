@@ -1,0 +1,66 @@
+# Advanced Tests Organization
+
+## File Structure for Advanced Tests
+
+```rust
+// <[@file src/noweb_advanced_test.rs]>=
+mod test_common;
+use test_common::*;
+
+// File operation tests
+// <[file-tests]>
+
+// Error handling tests
+// <[error-tests]>
+
+// Recursion detection tests
+// <[recursion-tests]>
+
+// Security and safety tests
+// <[safety-tests]>
+// $$
+```
+
+## File Operation Tests Section
+
+```rust
+// <[file-tests]>=
+// <[file-detection-tests]>
+// <[file-writing-tests]>
+// <[file-generation-tests]>
+// $$
+```
+
+## Error Tests Section
+
+```rust
+// <[error-tests]>=
+// <[undefined-chunk-tests]>
+// <[recursive-chunk-tests]>
+// <[max-recursion-tests]>
+// <[error-message-tests]>
+// $$
+```
+
+## Recursion Tests Section
+
+```rust
+// <[recursion-tests]>=
+// <[mutual-recursion-tests]>
+// <[complex-recursion-tests]>
+// <[diamond-dependency-tests]>
+// $$
+```
+
+## Safety Tests Section
+
+```rust
+// <[safety-tests]>=
+// <[dangerous-markers-tests]>
+// <[regex-safety-tests]>
+// <[name-validation-tests]>
+// <[unicode-safety-tests]>
+// $$
+```
+
+Would you like me to continue with implementing each section's content? I'll start with the file detection tests.

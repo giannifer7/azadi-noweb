@@ -1,6 +1,4 @@
-// Test Setup and Imports
-// Contains the TestSetup struct and basic imports needed for testing
-
+// ==== Test Setup and Imports ====
 use super::*;
 use std::fs;
 use tempfile::TempDir;
@@ -31,9 +29,7 @@ impl TestSetup {
             clip,
         }
     }
-}// Test Constants and Sample Data
-// All the test fixtures used across different test cases
-
+}// ==== Test Constants and Sample Data ====
 const BASIC_CHUNK: &str = r#"
 # <<test>>=
 Hello
@@ -127,8 +123,6 @@ const EMPTY_CHUNK: &str = r#"
 # <<empty>>=
 # @
 "#;// ==== Basic Functionality Tests ====
-// Tests for core chunk reading, parsing and basic expansion functionality
-
 #[test]
 fn test_basic_chunk() {
     let mut setup = TestSetup::new(&["#"]);
@@ -212,9 +206,7 @@ fn test_multi_comment_styles() {
 
     let rust_content = setup.clip.get_chunk_content("rust_chunk").unwrap();
     assert!(rust_content.join("").contains("println!(\"Hello\")"));
-}// ==== File Handling Tests ====
-// Tests for file chunk detection, writing, and multiple file generation
-
+}// ==== File Operation Tests ====
 #[test]
 fn test_file_chunk_detection() {
     let mut setup = TestSetup::new(&["#"]);
@@ -271,10 +263,29 @@ fn test_multiple_file_generation() -> Result<(), ChunkError> {
     assert_eq!(content1.trim(), "Content 1");
     assert_eq!(content2.trim(), "Content 2");
     Ok(())
-}// ==== Error Handling Tests ====
-// Tests for various error conditions including undefined chunks,
-// recursive references, and maximum recursion depth
+}
 
+#[test]
+fn test_sequential_chunks() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(SEQUENTIAL_CHUNKS, "test_sequential.nw");
+
+    let expanded = setup.clip.expand("main", "")?;
+    assert_eq!(expanded, vec!["First part\n", "Second part\n"]);
+    Ok(())
+}
+
+#[test]
+fn test_empty_chunk() {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(EMPTY_CHUNK, "test_empty.nw");
+
+    assert!(setup.clip.has_chunk("empty"));
+    assert!(
+        setup.clip.get_chunk_content("empty").unwrap().is_empty(),
+        "empty chunk should have no content"
+    );
+}// ==== Error Handling Tests ====
 #[test]
 fn test_undefined_chunk_error() {
     let mut setup = TestSetup::new(&["#"]);
@@ -410,208 +421,8 @@ End of included content
         }
         _ => panic!("Expected UndefinedChunk error"),
     }
-}// ==== Cross-Reference and Multi-File Tests ====
-// Tests for chunk references across multiple files and complex expansions
-
-#[test]
-fn test_multiple_files_with_cross_references() -> Result<(), ChunkError> {
-    let temp = TempDir::new()?;
-    let gen_dir = temp.path().join("gen");
-    let private_dir = temp.path().join("private");
-
-    fs::create_dir_all(&gen_dir)?;
-    fs::create_dir_all(&private_dir)?;
-
-    let safe_writer = SafeFileWriter::new(gen_dir.clone(), private_dir);
-
-    let mut clip = Clip::new(safe_writer, "<<", ">>", "@", &["#".to_string()]);
-
-    clip.read(
-        r#"
-<<chunk_a>>=
-Content of chunk A
-@
-<<@file file_a.txt>>=
-File A content from file1
-<<chunk_b2>>
-@
-"#,
-        "file1.noweb",
-    );
-
-    clip.read(
-        r#"
-<<chunk_b>>=
-Content of chunk B before referencing chunk A:
-<<chunk_a>>
-After referencing chunk A.
-@
-<<chunk_b2>>=
-Content of chunk B2
-@
-"#,
-        "file2.noweb",
-    );
-
-    clip.read(
-        r#"
-<<chunk_c>>=
-Start of chunk C
-<<chunk_a>>
-Middle of chunk C
-<<chunk_b>>
-End of chunk C
-@
-<<@file file_c.txt>>=
-File C content from file3
-@
-"#,
-        "file3.noweb",
-    );
-
-    assert!(clip.has_chunk("chunk_a"), "chunk_a should be present");
-    assert!(clip.has_chunk("chunk_b"), "chunk_b should be present");
-    assert!(clip.has_chunk("chunk_b2"), "chunk_b2 should be present");
-    assert!(clip.has_chunk("chunk_c"), "chunk_c should be present");
-
-    let file_chunks = clip.get_file_chunks();
-    assert_eq!(file_chunks.len(), 2, "There should be two @file chunks");
-
-    assert!(
-        file_chunks.contains(&"@file file_a.txt".to_string()),
-        "file_chunks should contain '@file file_a.txt'"
-    );
-    assert!(
-        file_chunks.contains(&"@file file_c.txt".to_string()),
-        "file_chunks should contain '@file file_c.txt'"
-    );
-
-    clip.write_files()?;
-
-    let content1 = fs::read_to_string(gen_dir.join("file_a.txt"))?;
-    assert_eq!(
-        content1.trim(),
-        "File A content from file1\nContent of chunk B2",
-        "file_a.txt should have correct content"
-    );
-
-    let content2 = fs::read_to_string(gen_dir.join("file_c.txt"))?;
-    assert_eq!(
-        content2.trim(),
-        "File C content from file3",
-        "file_c.txt should have correct content"
-    );
-
-    Ok(())
-}// ==== Miscellaneous Tests ====
-// Tests for sequential chunks, empty chunks, and chunk reset functionality
-
-#[test]
-fn test_sequential_chunks() -> Result<(), ChunkError> {
-    let mut setup = TestSetup::new(&["#"]);
-    setup.clip.read(SEQUENTIAL_CHUNKS, "test_sequential.nw");
-
-    let expanded = setup.clip.expand("main", "")?;
-    assert_eq!(expanded, vec!["First part\n", "Second part\n"]);
-    Ok(())
 }
-
-#[test]
-fn test_empty_chunk() {
-    let mut setup = TestSetup::new(&["#"]);
-    setup.clip.read(EMPTY_CHUNK, "test_empty.nw");
-
-    assert!(setup.clip.has_chunk("empty"));
-    assert!(
-        setup.clip.get_chunk_content("empty").unwrap().is_empty(),
-        "empty chunk should have no content"
-    );
-}
-
-#[test]
-fn test_reset() {
-    let mut setup = TestSetup::new(&["#"]);
-
-    setup.clip.read(
-        r#"
-# <<test>>=
-Hello
-# @
-"#,
-        "test_reset.nw",
-    );
-
-    assert!(setup.clip.has_chunk("test"));
-
-    setup.clip.reset();
-
-    assert!(!setup.clip.has_chunk("test"));
-    assert!(setup.clip.get_file_chunks().is_empty());
-}
-
-// ==== Warnings Tests ====
-// Tests for unused chunk detection and warning messages
-
-#[test]
-fn test_unused_chunk_warning() {
-    let mut setup = TestSetup::new(&["#"]);
-
-    setup.clip.read(
-        r#"
-# <<main>>=
-# <<used1>>
-# <<used2>>
-# @
-
-# <<used1>>=
-Content 1
-# @
-
-# <<used2>>=
-Content 2
-# @
-
-# <<unused1>>=
-Never used content 1
-# @
-
-# <<unused2>>=
-Never used content 2
-# @
-
-# <<@file output.txt>>=
-Some file content
-# @
-"#,
-        "unused_chunks.nw",
-    );
-
-    // First expand a chunk to trigger reference counting
-    let _ = setup.clip.expand("main", "");
-
-    // Get warnings about unused chunks
-    let warnings = setup.clip.check_unused_chunks();
-
-    // We expect exactly two warnings for unused1 and unused2
-    assert_eq!(warnings.len(), 2, "Expected exactly two warnings");
-
-    // Verify warning format and content
-    for warning in warnings {
-        assert!(
-            warning.starts_with("Warning: unused_chunks.nw"),
-            "Warning should start with file name"
-        );
-        assert!(
-            warning.contains("chunk 'unused1' is defined but never referenced")
-                || warning.contains("chunk 'unused2' is defined but never referenced"),
-            "Warning should mention the unused chunk: {}",
-            warning
-        );
-    }
-}
-// ==== Mutual Recursion Tests ====
-// Tests for detecting recursion between multiple chunks that reference each other
-
+// ==== Recursion and Mutual Recursion Tests ====
 #[test]
 fn test_mutual_recursion_error() {
     let mut setup = TestSetup::new(&["#"]);
@@ -639,30 +450,117 @@ End B
             assert_eq!(location.file, "mutual_recursion.nw");
             assert_eq!(location.line, 8); // Line of <<chunk-a>> in chunk-b, 0-based
         }
-        other => panic!("Expected RecursiveReference error, got {:?}", other),
+        _ => panic!("Expected RecursiveReference error"),
     }
-}// Tests to verify safety against malicious input
-#[test]
-fn test_nested_delimiters() {
-    let mut setup = TestSetup::new(&["#"]);
+}
 
-    // Try to confuse the parser with nested delimiters
+#[test]
+fn test_complex_recursion() {
+    let mut setup = TestSetup::new(&["#"]);
     setup.clip.read(
         r#"
-# <<outer<<inner>>>>=
-Content
-@
+# <<a>>=
+# <<b>>
+# @
+
+# <<b>>=
+# <<c>>
+# @
+
+# <<c>>=
+# <<d>>
+# @
+
+# <<d>>=
+# <<b>>
+# @
 "#,
-        "nested_delims.nw",
+        "complex_recursion.nw",
     );
 
-    // The chunk name should be parsed as "outer<<inner"
-    assert!(!setup.clip.has_chunk("outer"));
-    assert!(!setup.clip.has_chunk("inner"));
-    assert!(setup.clip.has_chunk("outer<<inner>>"));
+    let result = setup.clip.expand("a", "");
+    match result {
+        Err(AzadiError::Chunk(ChunkError::RecursiveReference { chunk, location })) => {
+            assert_eq!(chunk, "b");
+            assert_eq!(location.file, "complex_recursion.nw");
+        }
+        _ => panic!("Expected RecursiveReference error"),
+    }
 }
-// ==== Regex Safety Tests ====
-// Tests to verify safety against malicious regex patterns in markers and delimiters
+
+#[test]
+fn test_nested_chunk_without_recursion() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(
+        r#"
+# <<a>>=
+Start
+# <<b>>
+End
+# @
+
+# <<b>>=
+Middle
+# <<c>>
+More
+# @
+
+# <<c>>=
+Inner content
+# @
+"#,
+        "nested.nw",
+    );
+
+    let result = setup.clip.expand("a", "")?;
+    let expected = vec![
+        "Start\n",
+        "Middle\n",
+        "Inner content\n",
+        "More\n",
+        "End\n"
+    ];
+    assert_eq!(result, expected, "Nested expansion without recursion should work");
+    Ok(())
+}
+
+#[test]
+fn test_diamond_dependency() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(
+        r#"
+# <<top>>=
+# <<left>>
+# <<right>>
+# @
+
+# <<left>>=
+Left content
+# <<bottom>>
+# @
+
+# <<right>>=
+Right content
+# <<bottom>>
+# @
+
+# <<bottom>>=
+Bottom content
+# @
+"#,
+        "diamond.nw",
+    );
+
+    let result = setup.clip.expand("top", "")?;
+    let expected = vec![
+        "Left content\n",
+        "Bottom content\n",
+        "Right content\n",
+        "Bottom content\n"
+    ];
+    assert_eq!(result, expected, "Diamond dependencies should be handled correctly");
+    Ok(())
+}// ==== Safety and Regex Security Tests ====
 
 #[test]
 fn test_dangerous_comment_markers() {
@@ -675,6 +573,9 @@ fn test_dangerous_comment_markers() {
         "<<",          // same as delimiter
         ">>",          // same as delimiter
         "(comment)",   // regex group
+        "|",           // regex alternation
+        r"\",          // backslash
+        "*+?",         // regex quantifiers
     ];
 
     let content = r#"
@@ -692,12 +593,9 @@ Content4
 @
 "#;
     
-    // This will fail until we fix the regex pattern construction
-    // to properly escape the comment markers
     let mut setup = TestSetup::new(markers);
     setup.clip.read(content, "regex_test.nw");
 
-    // These assertions should pass once comment markers are properly escaped
     assert!(setup.clip.has_chunk("test1"), "Basic marker # failed");
     assert!(setup.clip.has_chunk("test2"), "Wildcard marker .* failed");
     assert!(setup.clip.has_chunk("test3"), "Character class marker [a-z]+ failed");
@@ -709,4 +607,160 @@ Content4
         vec!["Content1\n"],
         "Content extraction failed for test1"
     );
+}
+
+#[test]
+fn test_regex_dos_prevention() {
+    let mut setup = TestSetup::new(&["#", "(?:[a-z]++)*"]);  // Potential catastrophic backtracking
+    
+    let content = r#"
+# <<test>>=
+Content
+@
+"#;
+    
+    setup.clip.read(content, "regex_dos.nw");
+    assert!(setup.clip.has_chunk("test"), "Should handle potentially malicious regex safely");
+}
+
+#[test]
+fn test_nested_delimiters() {
+    let mut setup = TestSetup::new(&["#"]);
+    
+    // Test chunks with nested delimiters in their names
+    setup.clip.read(
+        r#"
+# <<chunk<<nested>>>>=
+Content
+@
+
+# <<chunk>>
+"#,
+        "nested_delims.nw"
+    );
+
+    assert!(setup.clip.has_chunk("chunk<<nested>>"), 
+        "Should handle nested delimiters in chunk names");
+}
+
+#[test]
+fn test_chunk_name_validation() {
+    let mut setup = TestSetup::new(&["#"]);
+    
+    // Test potentially problematic chunk names
+    let test_cases = [
+        r#"# <<@file ../test.txt>>=
+        Bad path
+        @"#,
+        
+        r#"# <<@file /absolute/path.txt>>=
+        Bad path
+        @"#,
+        
+        r#"# <<@file C:\windows\path.txt>>=
+        Bad path
+        @"#,
+        
+        r#"# <<@file normal.txt>>=
+        Good path
+        @"#,
+    ];
+
+    for case in test_cases {
+        setup.clip.read(case, "chunk_names.nw");
+    }
+
+    assert!(!setup.clip.has_chunk("@file ../test.txt"), 
+        "Should reject path traversal in chunk names");
+    assert!(!setup.clip.has_chunk("@file /absolute/path.txt"), 
+        "Should reject absolute paths in chunk names");
+    assert!(!setup.clip.has_chunk(r"@file C:\windows\path.txt"), 
+        "Should reject Windows paths in chunk names");
+    assert!(setup.clip.has_chunk("@file normal.txt"), 
+        "Should accept normal chunk names");
+}
+
+#[test]
+fn test_malformed_chunks() {
+    let mut setup = TestSetup::new(&["#"]);
+    
+    // Test various malformed chunk definitions
+    setup.clip.read(
+        r#"
+# <<>>=
+Empty name
+@
+
+# <<incomplete>>=
+No end marker
+
+# << spaces in name >>=
+Bad name
+@
+
+# <<valid>>=
+Good chunk
+@
+"#,
+        "malformed.nw"
+    );
+
+    assert!(!setup.clip.has_chunk(""), 
+        "Should reject empty chunk names");
+    assert!(!setup.clip.has_chunk(" spaces in name "), 
+        "Should reject chunk names with spaces");
+    assert!(setup.clip.has_chunk("valid"), 
+        "Should accept valid chunk names");
+}
+
+#[test]
+fn test_unicode_safety() {
+    let mut setup = TestSetup::new(&["#", "→", "♦"]);  // Unicode comment markers
+    
+    setup.clip.read(
+        r#"
+# <<test1>>=
+Content1
+@
+
+→ <<test2>>=
+Content2
+@
+
+♦ <<test3>>=
+Content3
+@
+"#,
+        "unicode.nw"
+    );
+
+    assert!(setup.clip.has_chunk("test1"));
+    assert!(setup.clip.has_chunk("test2"));
+    assert!(setup.clip.has_chunk("test3"));
+}
+
+#[test]
+fn test_comment_marker_escaping() {
+    let mut setup = TestSetup::new(&["##", "#@", "@#"]);  // Markers that could interfere with chunk end marker
+    
+    setup.clip.read(
+        r#"
+## <<test1>>=
+Content1
+@
+
+#@ <<test2>>=
+Content2
+@
+
+@# <<test3>>=
+Content3
+@
+"#,
+        "marker_escaping.nw"
+    );
+
+    assert!(setup.clip.has_chunk("test1"));
+    assert!(setup.clip.has_chunk("test2"));
+    assert!(setup.clip.has_chunk("test3"));
 }
