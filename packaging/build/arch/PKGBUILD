@@ -10,7 +10,7 @@ license=('MIT')
 depends=('gcc-libs')
 makedepends=('rust' 'cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha512sums=('5f40ca9597be81092d7aa8a401bf232af3e7c3f11d608014f0088457dbe89d1cd44268cae1563aff28a0edf08af0eb98038fa4ab6f26d4be4f88ad08d20c0f95')
+sha512sums=('9d9797ff149b95482f3a31a3de8dde2a39565faf6d82c1f707ea35dd64c861178f8a8a2df2cfd03f12f42ee41b36858213bf931f46b066f45ebb455467337c96')
 
 build() {
     cd "$srcdir/$pkgname-$pkgver"
