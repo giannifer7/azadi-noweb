@@ -2,10 +2,7 @@ pub mod noweb;
 pub mod safe_writer;
 
 #[cfg(test)]
-mod noweb_test;
-
-#[cfg(test)]
-mod safe_writer_test;
+mod tests;
 
 pub use noweb::ChunkError;
 

@@ -1,23 +1,9 @@
-# Common Test Infrastructure
-This file defines the basic test infrastructure and fixtures shared across our test files.
-
-```rust
-// <[@file src/test_common.rs]>=
-use super::*;
+// src/tests/common.rs
 use std::fs;
 use tempfile::TempDir;
+use crate::*;
 
-// <[test-setup]>
-// <[test-fixtures]>
-// <[test-helpers]>
-// $$
-```
-
-## Basic Test Setup
-
-```rust
-// <[test-setup]>=
-pub struct TestSetup {
+pub(crate) struct TestSetup {
     pub _temp_dir: TempDir,
     pub clip: Clip,
 }
@@ -44,20 +30,14 @@ impl TestSetup {
         }
     }
 }
-// $$
 
-## Test Fixtures
-All the sample chunks used across different tests:
-
-```rust
-// <[test-fixtures]>=
-pub const BASIC_CHUNK: &str = r#"
+pub(crate) const BASIC_CHUNK: &str = r#"
 # <<test>>=
 Hello
 # @
 "#;
 
-pub const TWO_CHUNKS: &str = r#"
+pub(crate) const TWO_CHUNKS: &str = r#"
 # <<chunk1>>=
 First chunk
 # @
@@ -66,7 +46,7 @@ Second chunk
 # @
 "#;
 
-pub const NESTED_CHUNKS: &str = r#"
+pub(crate) const NESTED_CHUNKS: &str = r#"
 # <<outer>>=
 Before
 # <<inner>>
@@ -77,7 +57,7 @@ Nested content
 # @
 "#;
 
-pub const INDENTED_CHUNK: &str = r#"
+pub(crate) const INDENTED_CHUNK: &str = r#"
 # <<main>>=
     # <<indented>>
 # @
@@ -86,7 +66,7 @@ some code
 # @
 "#;
 
-pub const PYTHON_CODE: &str = r#"
+pub(crate) const PYTHON_CODE: &str = r#"
 # <<code>>=
 def example():
     # <<body>>
@@ -95,7 +75,43 @@ def example():
 print('hello')
 # @
 "#;
-// $$
-```
 
-Would you like me to continue with the rest of the fixtures and start with the basic tests file? I'm keeping each section focused and under 300 lines.
+pub(crate) const MULTI_COMMENT_CHUNKS: &str = r#"
+# <<python_chunk>>=
+def hello():
+    print("Hello")
+# @
+
+// <<rust_chunk>>=
+fn main() {
+    println!("Hello");
+}
+// @
+"#;
+
+pub(crate) const FILE_CHUNKS: &str = r#"
+# <<@file output.txt>>=
+content
+# @
+# <<other>>=
+other content
+# @
+"#;
+
+pub(crate) const SEQUENTIAL_CHUNKS: &str = r#"
+# <<main>>=
+# <<part1>>
+# <<part2>>
+# @
+# <<part1>>=
+First part
+# @
+# <<part2>>=
+Second part
+# @
+"#;
+
+pub(crate) const EMPTY_CHUNK: &str = r#"
+# <<empty>>=
+# @
+"#;

@@ -1,8 +1,48 @@
-# Basic Test Suite
-Continuing with indentation and comment style tests:
+mod test_common;
+use test_common::*;
 
-```rust
-// <[indentation-tests]>=
+// Core chunk operations
+#[test]
+fn test_basic_chunk() {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(BASIC_CHUNK, "test_basic.nw");
+
+    assert!(setup.clip.has_chunk("test"));
+    assert_eq!(
+        setup.clip.get_chunk_content("test").unwrap(),
+        vec!["Hello\n"]
+    );
+}
+
+#[test]
+fn test_multiple_chunks() {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(TWO_CHUNKS, "test_multiple.nw");
+
+    assert!(setup.clip.has_chunk("chunk1"));
+    assert!(setup.clip.has_chunk("chunk2"));
+    assert_eq!(
+        setup.clip.get_chunk_content("chunk1").unwrap(),
+        vec!["First chunk\n"]
+    );
+    assert_eq!(
+        setup.clip.get_chunk_content("chunk2").unwrap(),
+        vec!["Second chunk\n"]
+    );
+}
+
+#[test]
+fn test_nested_chunk_expansion() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(NESTED_CHUNKS, "test_nested.nw");
+
+    let expanded = setup.clip.expand("outer", "")?;
+    let expected = vec!["Before\n", "Nested content\n", "After\n"];
+    assert_eq!(expanded, expected, "Nested chunks should expand correctly");
+    Ok(())
+}
+
+// Indentation handling
 #[test]
 fn test_indentation_preservation() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new(&["#"]);
@@ -22,20 +62,29 @@ fn test_complex_indentation() -> Result<(), ChunkError> {
     let mut setup = TestSetup::new(&["#"]);
     setup.clip.read(PYTHON_CODE, "test_python.nw");
 
+    // First verify base indentation is preserved
     let expanded = setup.clip.expand("code", "")?;
     let expected = vec!["def example():\n", "    print('hello')\n"];
     assert_eq!(expanded, expected);
 
-    // Test with additional base indentation
+    // Then verify additional indentation is correctly applied
     let expanded_indented = setup.clip.expand("code", "  ")?;
     let expected_indented = vec!["  def example():\n", "      print('hello')\n"];
     assert_eq!(expanded_indented, expected_indented);
     Ok(())
 }
-// $$
 
-```rust
-// <[comment-style-tests]>=
+#[test]
+fn test_sequential_chunks() -> Result<(), ChunkError> {
+    let mut setup = TestSetup::new(&["#"]);
+    setup.clip.read(SEQUENTIAL_CHUNKS, "test_sequential.nw");
+
+    let expanded = setup.clip.expand("main", "")?;
+    assert_eq!(expanded, vec!["First part\n", "Second part\n"]);
+    Ok(())
+}
+
+// Comment styles and edge cases
 #[test]
 fn test_multi_comment_styles() {
     let mut setup = TestSetup::new(&["#", "//"]);
@@ -62,15 +111,3 @@ fn test_empty_chunk() {
         "empty chunk should have no content"
     );
 }
-
-#[test]
-fn test_sequential_chunks() -> Result<(), ChunkError> {
-    let mut setup = TestSetup::new(&["#"]);
-    setup.clip.read(SEQUENTIAL_CHUNKS, "test_sequential.nw");
-
-    let expanded = setup.clip.expand("main", "")?;
-    assert_eq!(expanded, vec!["First part\n", "Second part\n"]);
-    Ok(())
-}
-// $$
-```
